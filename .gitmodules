@@ -1,0 +1,3 @@
+[submodule "src/myrock"]
+	path = src/myrock
+	url = /home/simonovm/git.bares/myrock
