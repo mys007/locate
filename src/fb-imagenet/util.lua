@@ -99,7 +99,8 @@ function DispatcherRing:dispatch(fun)
     
     while (self.slotReady[self.idxToDispatch]) do
         --print('Dispatching'..self.idxToDispatch)
-        fun(self.inputsCPU[self.idxToDispatch], self.labelsCPU[self.idxToDispatch])
+        local ok = xpcall(function() fun(self.inputsCPU[self.idxToDispatch], self.labelsCPU[self.idxToDispatch]) end, function(err) print(debug.traceback(err)) end)
+        if not ok then os.exit() end
         self.slotReady[self.idxToDispatch] = false
         self.tSemaphore[self.idxToDispatch]:unlock()
         

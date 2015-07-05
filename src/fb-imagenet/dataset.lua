@@ -134,7 +134,7 @@ function dataset:__init(...)
    end
    ----------------------------------------------------------------------
    -- Options for the GNU find command
-   local extensionList = {'jpg', 'png','JPG','PNG','JPEG', 'ppm', 'PPM', 'bmp', 'BMP'}
+   local extensionList = {'jpg', 'png','JPG','PNG','JPEG', 'ppm', 'PPM', 'bmp', 'BMP', 't7img'}
    local findOptions = ' -iname "*.' .. extensionList[1] .. '"'
    for i=2,#extensionList do
       findOptions = findOptions .. ' -o -iname "*.' .. extensionList[i] .. '"'
@@ -161,7 +161,7 @@ function dataset:__init(...)
    for i, class in ipairs(self.classes) do
       -- iterate over classPaths
       for j,path in ipairs(classPaths[i]) do
-         local command = find .. ' "' .. path .. '" ' .. findOptions
+         local command = find .. ' -H "' .. path .. '" ' .. findOptions
             .. ' >>"' .. classFindFiles[i] .. '" \n'
          tmphandle:write(command)
       end

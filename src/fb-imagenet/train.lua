@@ -109,7 +109,8 @@ function train()
    trainLogger:add{
       ['% top1 accuracy (train set)'] = top1_epoch,
       ['% top5 accuracy (train set)'] = top5_epoch,
-      ['avg loss (train set)'] = loss_epoch
+      ['avg loss (train set)'] = loss_epoch,
+      ['epoch'] = model.epoch
    }    
 
     -- save the exact rng state
@@ -184,7 +185,7 @@ function trainBatch(inputsCPU, labelsCPU)
             gradParameters:div(nEvals)       
         end   
         
-       --[[ for i,module in ipairs(model:listModules()) do
+        for i,module in ipairs(model:listModules()) do
             if (module.weight ~= nil and module.weight:nElement()>0 and module.pendingSharing==nil) then
                 print(i, module, torch.mean(module.output), torch.std(module.output), torch.mean(module.gradWeight), torch.std(module.gradWeight), torch.mean(module.gradBias), torch.mean(module.weight), torch.mean(module.bias)) end end
         print(torch.mean(inputs), torch.std(inputs))--]]

@@ -12,8 +12,8 @@ local Threads = require 'threads'
 local function doDonkey(opt)
     if opt.dataset=='imagenet' then
     	paths.dofile('donkeyImagenet.lua')
-    elseif opt.dataset=='pascal3d' then
-    	paths.dofile('donkeyP3D.lua')
+    elseif opt.dataset=='modapairs' then
+    	paths.dofile('donkeyModapairs.lua')
     else
     	assert(false, 'unknown dataset')
   	end 	
@@ -46,6 +46,7 @@ do -- start K datathreads (donkeys)
       donkeys = {}
       function donkeys:addjob(f1, f2) f2(f1()) end
       function donkeys:synchronize() end
+      function donkeys:specific() end
    end
 end
 

@@ -20,6 +20,10 @@ local testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
 
 local dispatcherRing = DispatcherRing(math.max(1,opt.nDonkeys))
 
+
+-- TODO: the real test-case will be given patch1 and image2, compute feats full-conv over image2 and output map? need to implement overfeat-like shifts or upsampling? or are they fine just with patch-patch similarity?
+-- TODO: test set will need to be fixed with a special seed (in donkeys)
+
 -------------------------------------------------------------------------------------------------------------
 function test(isTest)
     model:evaluate()
@@ -76,7 +80,8 @@ function test(isTest)
         ['% top5 accuracy (test set) (center crop)'] = top5_center,
         ['% top1 accuracy (test set) (10 crops)'] = top1_10crop,
         ['% top5 accuracy (test set) (10 crops)'] = top5_10crop,
-        ['avg loss (test set)'] = loss
+        ['avg loss (test set)'] = loss,
+        ['epoch'] = model.epoch
     }
 
     print(string.format('Epoch: [%d][TESTING SUMMARY] Total Time(s): %.2f \t'
