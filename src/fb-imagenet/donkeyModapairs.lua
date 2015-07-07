@@ -9,7 +9,7 @@
 require 'image'
 require 'myutils'
 paths.dofile('dataset.lua')
-paths.dofile('util.lua')
+require 'util'
 
 -- This file contains the data-loading logic and details.
 -- It is run by each data-loader thread.
@@ -23,8 +23,7 @@ local datapath = '/home/simonovm/datasets/IXI/patches'
 local patchdir = '/home/simonovm/datasets/IXI/patches/patches'
 local modalitiesext = {'T1.t7img', 'T2.t7img'}
 
-local sampleSize = {2, 64, 64}
-local nTrSamples = 5
+local sampleSize = {2, opt.patchSize, opt.patchSize}
 local maxIntersection = 0.1
 local maxBlacks = sampleSize[2]*sampleSize[3]/2
 
@@ -153,7 +152,7 @@ end
 
 -- function to load the image pair
 local trainHook = function(self, path)
-    return processImagePair(self, path, nTrSamples, true)
+    return processImagePair(self, path, opt.numTSPatches, true)
 end
 
 if paths.filep(trainCache) then

@@ -62,6 +62,8 @@ function train()
     top1_epoch = 0
     top5_epoch = 0
     loss_epoch = 0
+    
+    assert(opt.batchSize % opt.numTSPatches == 0)
 
     --TODO: randperm instead of random samplingthis is a source of nondeterminism, threads may deliver in different order. 
     -- proposal: randperm is parted between threads. main thread has #thread slots, where it stores the results. at each new store, it tries to process the ringbuffer sequentially
@@ -72,7 +74,7 @@ function train()
         donkeys:addjob(
             -- the job callback (runs in data-worker thread)
             function()
-                local inputs, labels = trainLoader:sample(opt.batchSize)
+                local inputs, labels = trainLoader:sample(opt.batchSize / opt.numTSPatches)
                 
                 local Threads = require 'threads'
                 local s = Threads.Mutex(semaIds[__threadid])

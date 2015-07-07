@@ -53,7 +53,7 @@ end
 datasetInfo = {}
 
 donkeys:addjob(function() return trainLoader.classes end, function(c) datasetInfo.classes = c end)
-donkeys:addjob(function() return trainLoader:sizeTrain() end, function(c) datasetInfo.nTrain = c end)
+donkeys:addjob(function() return trainLoader:sizeTrain() end, function(c) datasetInfo.nTrain = c * opt.numTSPatches end)
 donkeys:synchronize()
 datasetInfo.nClasses = #datasetInfo.classes
 assert(datasetInfo.nClasses, "Failed to get nClasses")

@@ -19,8 +19,8 @@
 
 typedef double PixelType;
 typedef itk::Image<PixelType,3> Image3DType;
-typedef itk::Image<PixelType,2> Image2DType;
-//typedef itk::Image<unsigned char,2> Image2DType;
+//typedef itk::Image<PixelType,2> Image2DType;
+typedef itk::Image<unsigned char,2> Image2DType;
 typedef itk::ImageFileReader<Image3DType> ImageFileReaderType;
 typedef itk::ImageFileWriter<Image2DType> ImageFileWriterType;
 typedef itk::ExtractImageFilter<Image3DType,Image2DType> ExtractImageFilterType;
@@ -42,9 +42,12 @@ template <typename ImageType> void stddev(const typename ImageType::Pointer imag
 	std::cout << "Max: " << (double)statisticsImageFilter->GetMaximum() << std::endl;
 }
 
+
+//ARGS: srcdir destdir numslices
 int main(int argc, char *argv[])
 {
 	const std::string target_path(argv[1]);
+	const int nSlices = argc>3 ? strtol(argv[3],NULL,0) : 1;
 	Image3DType::Pointer referenceImage = NULL;
 	
     std::vector<boost::filesystem::path> v;
@@ -89,18 +92,50 @@ int main(int argc, char *argv[])
 
 			stddev<Image3DType>(imageReader->GetOutput());
 						
-			for (int iSlice=0; iSlice<3; ++iSlice)
+			for (int iDim=0; iDim<3; ++iDim)
 			{
 				Image3DType::RegionType inputRegion = imageResampleFilter->GetOutput()->GetLargestPossibleRegion();
 				Image3DType::SizeType   imageSize   = inputRegion.GetSize();
 				Image3DType::IndexType  start = inputRegion.GetIndex();
-				Image3DType::IndexType   center;
+
+				int step = imageSize[iDim]/(nSlices+1);
+				imageSize[iDim] = 0;
+
+				for (int iSlice=0; iSlice<nSlices; ++iSlice)
+				{
+					Image3DType::RegionType  sliceRegion;
+					sliceRegion.SetSize(imageSize);
+					start[iDim] = (iSlice+1) * step;
+					sliceRegion.SetIndex(start);
+
+					extractSliceFilter->SetInput(imageResampleFilter->GetOutput());
+					extractSliceFilter->SetExtractionRegion(sliceRegion);
+					extractSliceFilter->SetDirectionCollapseToIdentity();
+					extractSliceFilter->Update();
+
+					std::stringstream outputStream;
+					outputStream << argv[2] << "Dim_" << iDim << "Slice_" << iSlice << "_" << currentFileName << ".png";
+					std::cout << "Writing to :  " << outputStream.str() << std::endl;
+
+					//stddev<Image2DType>(extractSliceFilter->GetOutput());
+
+					imageWriter->SetFileName(outputStream.str());
+					imageWriter->SetInput(extractSliceFilter->GetOutput());
+					imageWriter->Update();
+				}
+
+
+
+
+
+				/*
+
 				for (int j=0; j<3; ++j)
 				{
 				center[j] = imageSize[j]/2;
 				}
-				start[iSlice] = center[iSlice];
-				imageSize[iSlice] = 0;
+				start[iDim] = center[iDim];
+				imageSize[iDim] = 0;
 
 				Image3DType::RegionType  sliceRegion;
 				sliceRegion.SetSize(imageSize);
@@ -112,14 +147,14 @@ int main(int argc, char *argv[])
 				extractSliceFilter->Update();
 
 				std::stringstream outputStream;
-				outputStream << argv[2] <<"Slice_" << iSlice << "_"<<currentFileName;// << ".png";
+				outputStream << argv[2] <<"Slice_" << iDim << "_"<<currentFileName;// << ".png";
 				std::cout << "Writing to :  " << outputStream.str() << std::endl;
 
 				stddev<Image2DType>(extractSliceFilter->GetOutput());
 
 				imageWriter->SetFileName(outputStream.str());
 				imageWriter->SetInput(extractSliceFilter->GetOutput());
-				imageWriter->Update();
+				imageWriter->Update();*/
 			}
 		}
 
