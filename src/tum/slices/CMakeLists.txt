@@ -16,6 +16,10 @@ ENDIF()
 
 
 add_executable(ExtractSlices  extract_slices.cpp )
+add_executable(AlignVolumes  align_volumes.cpp )
 target_link_libraries(ExtractSlices ${ITK_LIBRARIES} ${Boost_FILESYSTEM_LIBRARY}
+${Boost_SYSTEM_LIBRARY}
+${Boost_REGEX_LIBRARY} )
+target_link_libraries(AlignVolumes ${ITK_LIBRARIES} ${Boost_FILESYSTEM_LIBRARY}
 ${Boost_SYSTEM_LIBRARY}
 ${Boost_REGEX_LIBRARY} )

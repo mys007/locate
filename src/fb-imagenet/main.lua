@@ -65,9 +65,10 @@ cutorch.manualSeed(opt.seed)
 
 local earlyStop
 while model.epoch < opt.numEpochs do
+
     -- train/test
     local trainRet = train()
-    local validRet = {}--test(false)        --TODO
+    local validRet = (datasetInfo.nValid>0 and opt.doValidation) and test(false) or {}
     local testRet = test(true)
     
     learningLogger:logAccuracy(trainRet['meanAccuracy'], validRet['meanAccuracy'] or 0, testRet['meanAccuracy'])

@@ -6,25 +6,27 @@
 --  LICENSE file in the root directory of this source tree. An additional grant
 --  of patent rights can be found in the PATENTS file in the same directory.
 --
+package.path = "../myrock/?.lua;../?.lua;" .. package.path
 require 'image'
 require 'myutils'
 paths.dofile('dataset.lua')
 require 'util'
+require 'torchzlib'
 
 -- This file contains the data-loading logic and details.
 -- It is run by each data-loader thread.
 ------------------------------------------
 
 -- a cache file of the training metadata (if doesnt exist, will be created)
-local trainCache = '/home/simonovm/datasets/cache/donkeyModapairs.trainCache.t7'
-local testCache = '/home/simonovm/datasets/cache/donkeyModapairs.testCache.t7'
-local meanstdCache = '/home/simonovm/datasets/cache/donkeyModapairs.meanstdCache.t7'
-local datapath = '/home/simonovm/datasets/IXI/patches'
-local patchdir = '/home/simonovm/datasets/IXI/patches/patches'
-local modalitiesext = {'T1.t7img', 'T2.t7img'}
+local trainCache = '/home/simonovm/datasets/cache/donkeyModapairs.trainCache_s'..opt.trainSplit..'_T1T2.t7'
+local testCache = '/home/simonovm/datasets/cache/donkeyModapairs.testCache_T1T2.t7'
+local meanstdCache = '/home/simonovm/datasets/cache/donkeyModapairs.meanstdCache_s'..opt.trainSplit..'_T1T2.t7'
+local datapath = '/home/simonovm/datasets/IXI'
+local patchdir = '/home/simonovm/datasets/IXI/volumes'
+local modalitiesext = {'T1.t7img.gz', 'T2.t7img.gz'}
 
 local sampleSize = {2, opt.patchSize, opt.patchSize}
-local maxIntersection = 0.1
+local maxIntersection = 0.3
 local maxBlacks = sampleSize[2]*sampleSize[3]/2
 
 -- channel-wise mean and std. Calculate or load them from disk later in the script.
@@ -38,15 +40,12 @@ end
 --------------------------------
 local function loadImage(path)
     assert(path~=nil)
-    local input = (paths.extname(path)=='t7img') and torch.load(path) or image.load(path)
+    local input = string.ends(path,'t7img') and torch.load(path) or (string.ends(path,'t7img.gz') and torch.load(path):decompress() or image.load(path))
     if input:dim() == 2 then -- 1-channel image loaded as 2D tensor
-        input = input:view(1,input:size(1), input:size(2))
     elseif input:dim() == 3 and input:size(1) == 1 then -- 1-channel image
+        input = input:view(input:size(2), input:size(3))
     elseif input:dim() == 3 and input:size(1) == 3 then -- 3-channel image
         input = input[1]
-    else
-        print(#input)
-        error('not 2-channel or 3-channel image')
     end
     return input
 end
@@ -59,13 +58,47 @@ local function loadImagePair(path)
     local input2 = loadImage(paths.concat(patchdir, string.sub(paths.basename(path),1,-string.len(modalitiesext[1])-1)..modalitiesext[2]))
     return input1, input2
 end
+
+--------------------------------
+-- samples oH x oW patch from random slice of random dimension (in case of volumetric input)
+local function samplePatch(oW, oH, input)
+    if input:dim()==3 then
+        local dim = math.ceil(torch.uniform(1e-2, 3))
+        local sliceidx = math.ceil(torch.uniform(1e-2, input:size(dim)))
+        local sizes = torch.totable(input:size())        
+        table.remove(sizes, dim)
+        local x1 = math.ceil(torch.uniform(1e-2, sizes[2]-oW))
+        local y1 = math.ceil(torch.uniform(1e-2, sizes[1]-oH))                    
+        local indices = {{y1,y1 + oH-1}, {x1,x1 + oW-1}}
+        table.insert(indices,dim,{sliceidx, sliceidx})
+        return indices
+    else
+        local x1 = math.ceil(torch.uniform(1e-2, input:size(2)-oW))
+        local y1 = math.ceil(torch.uniform(1e-2, input:size(1)-oH))                
+        return {{y1,y1 + oH-1}, {x1,x1 + oW-1}}
+    end
+end
+
+--------------------------------
+-- inflates a 1 x oH x oW patch to sampleSize[2]/10 x oH x oW. 
+local function inflatePatchTo3D(indices)
+    local out = {}
+    local inflation = sampleSize[2]/10
+    for i=1,#indices do
+        if indices[i][1]==indices[i][2] then
+            out[i] = {indices[i][1] - inflation/2, indices[i][1] + inflation/2}
+        else
+            out[i] = indices[i]
+        end
+    end
+    return out
+end
     
 --------------------------------
 local function processImagePair(dataset, path, nSamples, traintime)
     assert(traintime~=nil)
     collectgarbage()
     local input1, input2 = loadImagePair(path)
-    local iW, iH = input1:size(3), input1:size(2)  
     local oW = sampleSize[3]
     local oH = sampleSize[2]   
 
@@ -81,24 +114,22 @@ local function processImagePair(dataset, path, nSamples, traintime)
             local ok = false
                         
             for a=1,1000 do
-                local x1 = math.ceil(torch.uniform(1e-2, iW-oW))
-                local y1 = math.ceil(torch.uniform(1e-2, iH-oH))
-                out1 = input1[{{},{y1,y1 + oH-1}, {x1,x1 + oW-1}}]
-
+                local in1idx = samplePatch(oW, oH, input1)
+                out1 = input1[in1idx]
+                
                 if not doPos then 
-                    -- rejective sampling for neg position (can't overlap too much)
+                    -- rejective sampling for neg position (can't overlap too much; also don't get too close between slices [->inflate])
                    for b=1,1000 do    
-                        local x2 = math.ceil(torch.uniform(1e-2, iW-oW))
-                        local y2 = math.ceil(torch.uniform(1e-2, iH-oH))
-                        local inter, union = rectIntersectionUnion(x1,y1,oW,oH,x2,y2,oW,oH)
+                        local in2idx = samplePatch(oW, oH, input2)
+                        local inter, union = boxIntersectionUnion(inflatePatchTo3D(in1idx), inflatePatchTo3D(in2idx))
                         if inter/oW/oH < maxIntersection then
-                            out2 = input2[{{},{y2,y2 + oH-1}, {x2,x2 + oW-1}}]
+                            out2 = input2[in2idx]
                             ok = true
-                            break                 
+                            break
                         end
                     end    
                 else 
-                    out2 = input2[{{},{y1,y1 + oH-1}, {x1,x1 + oW-1}}]
+                    out2 = input2[in1idx]
                     ok = true
                 end
                 
@@ -130,7 +161,8 @@ local function processImagePair(dataset, path, nSamples, traintime)
             -- optionally flip
             if traintime then
                 if torch.uniform() > 0.5 then out = image.hflip(out) end
-                --TODO: vflips and 90deg rots
+                if torch.uniform() > 0.5 then out = image.vflip(out) end
+                --TODO: 90deg rots
             end        
             
             if false and not doPos then
@@ -146,32 +178,49 @@ local function processImagePair(dataset, path, nSamples, traintime)
 end
 
 --------------------------------------------------------------------------------
---[[ Section 1: Create a train data loader (trainLoader),
-   which does class-balanced sampling from the dataset and does a random crop
-]]--
-
 -- function to load the image pair
 local trainHook = function(self, path)
     return processImagePair(self, path, opt.numTSPatches, true)
 end
 
+--------------------------------------------------------------------------------
+-- function to load the image (seed set in a test-sample specific way, repeatable)
+local hash = require 'hash'
+local hashstate = hash.XXH64()
+
+local testHook = function(self, path)
+
+    --TODO: not that this uses same constraints on sampling, ie. no 'nearly positives'!
+
+    local rngState = torch.getRNGState()
+    torch.manualSeed(hashstate:hash(path))
+    local out = processImagePair(self, path, opt.numTestSPatches, false)  
+    torch.setRNGState(rngState)
+    return out
+end
+
+--------------------------------------------------------------------------------
+--[[ Section 1: Create a train data loader (trainLoader),
+   which does class-balanced sampling from the dataset and does a random crop
+]]--
+
 if paths.filep(trainCache) then
    print('Loading train metadata from cache')
    trainLoader = torch.load(trainCache)
-   trainLoader.sampleHookTrain = trainHook
 else
    print('Creating train metadata')
    trainLoader = dataLoader{
       paths = {paths.concat(datapath, 'train')},
-      loadSize = {3, 256, 256},
+      loadSize = {2, 256, 256},
       sampleSize = sampleSize,
-      forceClasses = {[1] = 'pos', [2] = 'neg'},
-      split = 100,
+      forceClasses = {[1] = 'pos', [2] = 'neg'}, --(dataLoader can't handle -1)
+      split = opt.trainSplit,
       verbose = true
    }
    torch.save(trainCache, trainLoader)
-   trainLoader.sampleHookTrain = trainHook
 end
+trainLoader.sampleHookTrain = trainHook
+trainLoader.sampleHookTest = testHook --(validation)
 collectgarbage()
 
 -- do some sanity checks on trainLoader
@@ -183,41 +232,25 @@ do
 
 end
 
--- End of train loader section
---------------------------------------------------------------------------------
-
-local hash = require 'hash'
-local hashstate = hash.XXH64()
-
 --[[ Section 2: Create a test data loader (testLoader),
    which can iterate over the test set--]]
-
--- function to load the image (seed set in a test-sample specific way, repeatable)
-local testHook = function(self, path)
-    local rngState = torch.getRNGState()
-    torch.manualSeed(hashstate:hash(path))
-    local out = processImagePair(self, path, 1, false)  
-    torch.setRNGState(rngState)
-    return out
-end
 
 if paths.filep(testCache) then
    print('Loading test metadata from cache')
    testLoader = torch.load(testCache)
-   testLoader.sampleHookTest = testHook
 else
    print('Creating test metadata')
    testLoader = dataLoader{
-      paths = {paths.concat(datapath, 'val')},
-      loadSize = {3, 256, 256},
-      sampleSize = {3, 224, 224},
+      paths = {paths.concat(datapath, 'test')},
+      loadSize = {2, 256, 256},
+      sampleSize = sampleSize,
       split = 0,
       verbose = true,
       forceClasses = trainLoader.classes -- force consistent class indices between trainLoader and testLoader
    }
    torch.save(testCache, testLoader)
-   testLoader.sampleHookTest = testHook
 end
+testLoader.sampleHookTest = testHook
 collectgarbage()
 -- End of test loader section
 
@@ -229,30 +262,30 @@ if paths.filep(meanstdCache) then
    print('Loaded mean and std from cache.')
 else
    local tm = torch.Timer()
-   local nSamples = 10000
-   print('Estimating the mean (per-channel, shared for all pixels) over ' .. nSamples .. ' randomly sampled training images')
-   local meanEstimate = {0,0,0}
+   local nSamples = 500
+   print('Estimating the mean (per-channel, shared for all pixels) over ' .. nSamples*opt.numTSPatches .. ' randomly sampled training images')
+   local meanEstimate = {0,0}
    for i=1,nSamples do
       local img = trainLoader:sample(1)
-      for j=1,3 do
-         meanEstimate[j] = meanEstimate[j] + img[j]:mean()
-      end
+      for j=1,2 do for k=1,img:size(1) do
+         meanEstimate[j] = meanEstimate[j] + img[k][j]:mean()
+      end end
    end
-   for j=1,3 do
-      meanEstimate[j] = meanEstimate[j] / nSamples
+   for j=1,2 do
+      meanEstimate[j] = meanEstimate[j] / (nSamples*opt.numTSPatches)
    end
    mean = meanEstimate
 
-   print('Estimating the std (per-channel, shared for all pixels) over ' .. nSamples .. ' randomly sampled training images')
-   local stdEstimate = {0,0,0}
+   print('Estimating the std (per-channel, shared for all pixels) over ' .. nSamples*opt.numTSPatches .. ' randomly sampled training images')
+   local stdEstimate = {0,0}
    for i=1,nSamples do
       local img = trainLoader:sample(1)
-      for j=1,3 do
-         stdEstimate[j] = stdEstimate[j] + img[j]:std()
-      end
+      for j=1,2 do for k=1,img:size(1) do
+         stdEstimate[j] = stdEstimate[j] + img[k][j]:std()
+      end end
    end
-   for j=1,3 do
-      stdEstimate[j] = stdEstimate[j] / nSamples
+   for j=1,2 do
+      stdEstimate[j] = stdEstimate[j] / (nSamples*opt.numTSPatches)
    end
    std = stdEstimate
 

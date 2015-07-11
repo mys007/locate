@@ -11,7 +11,8 @@ require 'sgdcaffe'
 require 'opthelper'
 
 local iter
-local top1_epoch, top5_epoch, loss_epoch
+local loss_epoch
+local confusion = optim.ConfusionMatrix(datasetInfo.nClasses)
 local nIters = math.floor(datasetInfo.nTrain / opt.batchSize)
 __threadid = 1
 
@@ -59,8 +60,7 @@ function train()
     cutorch.synchronize()
 
     local tm = torch.Timer()
-    top1_epoch = 0
-    top5_epoch = 0
+    confusion:zero()
     loss_epoch = 0
     
     assert(opt.batchSize % opt.numTSPatches == 0)
@@ -96,21 +96,21 @@ function train()
     learningLogger:logLoss(optloss)
     learningLogger:logGradUpd(optstep, config.learningRate)    
 
-    learningDebugger:reset()
-
-    top1_epoch = top1_epoch * 100 / (opt.batchSize * nIters)
-    top5_epoch = top5_epoch * 100 / (opt.batchSize * nIters)
+    --learningDebugger:reset()
+    
+    print(confusion)
+    --confusion:updateValids()
+    --print('++ global correct: ' .. (confusion.totalValid*100) .. '%')
     loss_epoch = loss_epoch / nIters
 
     print(string.format('Epoch: [%d/%d][TRAINING SUMMARY] Total Time(s): %.2f\t'
         .. 'average loss (per batch): %.2f \t '
-        .. 'accuracy(%%):\t top-1 %.2f\t top-5 %.2f',
-        model.epoch, opt.numEpochs, tm:time().real, loss_epoch, top1_epoch, top5_epoch))
+        .. 'accuracy(%%):\t top-1 %.2f',
+        model.epoch, opt.numEpochs, tm:time().real, loss_epoch, confusion.totalValid))
     print('\n')
     
    trainLogger:add{
-      ['% top1 accuracy (train set)'] = top1_epoch,
-      ['% top5 accuracy (train set)'] = top5_epoch,
+      ['% accuracy (train set)'] = confusion.totalValid * 100,
       ['avg loss (train set)'] = loss_epoch,
       ['epoch'] = model.epoch
    }    
@@ -128,8 +128,7 @@ function train()
     collectgarbage()
 
     local ret = {}
-    ret['meanAccuracy'] = top1_epoch --% top1 accuracy (train set)
-    ret['meanAccuracy5'] = top5_epoch--% top5 accuracy (train set)
+    ret['meanAccuracy'] = confusion.totalValid * 100 --% top1 accuracy (train set)
     ret['meanLoss'] = loss_epoch     --avg loss (train set)
     return ret    
 end
@@ -142,6 +141,7 @@ function trainBatch(inputsCPU, labelsCPU)
 
     -- transfer over to GPU
     inputs:resize(inputsCPU:size()):copy(inputsCPU)
+    if opt.criterion == "bsvm" then labelsCPU[torch.eq(labelsCPU,2)] = -1 end
     labels:resize(labelsCPU:size()):copy(labelsCPU)
 
     local top1 = 0
@@ -187,7 +187,7 @@ function trainBatch(inputsCPU, labelsCPU)
             gradParameters:div(nEvals)       
         end   
         
-        for i,module in ipairs(model:listModules()) do
+        --[[for i,module in ipairs(model:listModules()) do
             if (module.weight ~= nil and module.weight:nElement()>0 and module.pendingSharing==nil) then
                 print(i, module, torch.mean(module.output), torch.std(module.output), torch.mean(module.gradWeight), torch.std(module.gradWeight), torch.mean(module.gradBias), torch.mean(module.weight), torch.mean(module.bias)) end end
         print(torch.mean(inputs), torch.std(inputs))--]]
@@ -230,26 +230,16 @@ function trainBatch(inputsCPU, labelsCPU)
         end  
     end       
 
-    -- top-1 and top-5 error
-    do
-        local gt = labelsCPU
-        local _,prediction_sorted = outputs:float():sort(2, true) -- descending
-        for i=1,opt.batchSize do
-            local pi = prediction_sorted[i]
-            if pi[1] == gt[i] then top1 = top1 + 1; top5 = top5 + 1;
-            else for j=2,5 do if pi[j] == gt[i] then top5 = top5 + 1; break; end; end; end
+    --confusion
+    outputs = outputs:float()
+    if opt.criterion == "bsvm" then 
+        for i=1,labelsCPU:nElement() do
+            local it, ip = (labelsCPU[i]==1 and 1 or 2), (outputs[i][1]>0 and 1 or 2)
+            confusion.mat[it][ip] = confusion.mat[it][ip] + 1
         end
-        top1_epoch = top1_epoch + top1; top5_epoch = top5_epoch + top5
-        top1 = top1 * 100 / opt.batchSize; top5 = top5 * 100 / opt.batchSize
+    else        
+        confusion:add(outputs, labelsCPU)
     end
-    if (iter % 15) == 0 then
-        nlprint(string.format('Accuracy ' ..
-            'top1-%%: %.2f \t' ..
-            'top5-%%: %.2f \t' ..
-            'Loss: %.4f \t' ..
-            'LR: %.0e',
-            top1, top5, loss,
-            config.learningRate))
-    end
+    
     dataTimer:reset()
 end
