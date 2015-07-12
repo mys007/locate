@@ -207,6 +207,7 @@ end
 if paths.filep(trainCache) then
    print('Loading train metadata from cache')
    trainLoader = torch.load(trainCache)
+   trainLoader.sampleSize = sampleSize
 else
    print('Creating train metadata')
    trainLoader = dataLoader{
@@ -238,6 +239,7 @@ end
 if paths.filep(testCache) then
    print('Loading test metadata from cache')
    testLoader = torch.load(testCache)
+   testLoader.sampleSize = sampleSize
 else
    print('Creating test metadata')
    testLoader = dataLoader{
@@ -294,16 +296,16 @@ else
    cache.std = std
    torch.save(meanstdCache, cache)
    print('Time to estimate:', tm:time().real)
+
+    do -- just check if mean/std look good now
+       local testmean = 0
+       local teststd = 0
+       for i=1,100 do
+          local img = trainLoader:sample(1)
+          testmean = testmean + img:mean()
+          teststd  = teststd + img:std()
+       end
+       print('Stats of 100 randomly sampled images after normalizing. Mean: ' .. testmean/100 .. ' Std: ' .. teststd/100)
+    end   
 end
 print('Mean: ', mean[1], mean[2], mean[3], 'Std:', std[1], std[2], std[3])
-
-do -- just check if mean/std look good now
-   local testmean = 0
-   local teststd = 0
-   for i=1,100 do
-      local img = trainLoader:sample(1)
-      testmean = testmean + img:mean()
-      teststd  = teststd + img:std()
-   end
-   print('Stats of 100 randomly sampled images after normalizing. Mean: ' .. testmean/100 .. ' Std: ' .. teststd/100)
-end

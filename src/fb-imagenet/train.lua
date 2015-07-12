@@ -232,9 +232,10 @@ function trainBatch(inputsCPU, labelsCPU)
 
     --confusion
     outputs = outputs:float()
-    if opt.criterion == "bsvm" then 
+    if opt.criterion == "bsvm" or opt.criterion == "emb" then 
+        outputs = outputs:view(-1)
         for i=1,labelsCPU:nElement() do
-            local it, ip = (labelsCPU[i]==1 and 1 or 2), (outputs[i][1]>0 and 1 or 2)
+            local it, ip = (labelsCPU[i]==1 and 1 or 2), (outputs[i]>0 and 1 or 2)
             confusion.mat[it][ip] = confusion.mat[it][ip] + 1
         end
     else        

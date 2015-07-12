@@ -32,6 +32,8 @@ if opt.network ~= '' then
     end
 end
 
+--model.modules[2]:reset(); model.modules[5]:reset()
+
 cleanModelInit(model, opt) --just for saving
 
 model:cuda()
