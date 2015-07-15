@@ -21,7 +21,7 @@ function M.parse(arg)
 	cmd:text()
 	cmd:text('Options:')
 	cmd:option('-runName', '', '')  --!!!!!!
-	cmd:option('-save', '/home/simonovm/workspace/E/medipatch', 'subdirectory to save/log experiments in')
+	cmd:option('-save', os.getenv('HOME')..'/workspace/E/medipatch', 'subdirectory to save/log experiments in')
     cmd:option('-t', false, 'test only (test set)')
     cmd:option('-v', false, 'test only (valid set)')
 	cmd:option('-network', '', 'reload pretrained network')

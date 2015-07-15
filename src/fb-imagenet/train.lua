@@ -133,6 +133,15 @@ function train()
     return ret    
 end
 
+----
+--[[local function saveImgBatch(batch,lbls)
+    for s=1,batch:size(1) do
+        for m=1,batch:size(2) do
+            image.save('/home/simonovm/tmp/' .. (lbls[s]==1 and 'pos' or 'neg').. s .. '_' .. m .. '.png',image.toDisplayTensor{input=batch[s][m]})
+        end
+    end
+end--]]
+
 -------------------------------------------------------------------------------------------------------------
 function trainBatch(inputsCPU, labelsCPU)
     cutorch.synchronize()

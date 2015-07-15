@@ -15,10 +15,10 @@ require 'util'
 ------------------------------------------
 
 -- a cache file of the training metadata (if doesnt exist, will be created)
-local trainCache = '/home/simonovm/datasets/cache/ILSVRC2012_256_trainCache_s'..opt.trainSplit..'.t7'
-local testCache = '/home/simonovm/datasets/cache/ILSVRC2012_256_testCache.t7'
-local meanstdCache = '/home/simonovm/datasets/cache/ILSVRC2012_256_meanstdCache_s'..opt.trainSplit..'.t7'
-local datapath = '/home/simonovm/datasets/ILSVRC2012_256'
+local trainCache = os.getenv('HOME')..'/datasets/cache/ILSVRC2012_256_trainCache_s'..opt.trainSplit..'.t7'
+local testCache = os.getenv('HOME')..'/datasets/cache/ILSVRC2012_256_testCache.t7'
+local meanstdCache = os.getenv('HOME')..'/datasets/cache/ILSVRC2012_256_meanstdCache_s'..opt.trainSplit..'.t7'
+local datapath = os.getenv('HOME')..'/datasets/ILSVRC2012_256'
 
 -- Check for existence of datapath
 if not os.execute('cd ' .. datapath) then

@@ -18,11 +18,11 @@ require 'torchzlib'
 ------------------------------------------
 
 -- a cache file of the training metadata (if doesnt exist, will be created)
-local trainCache = '/home/simonovm/datasets/cache/donkeyModapairs.trainCache_s'..opt.trainSplit..'_T1T2.t7'
-local testCache = '/home/simonovm/datasets/cache/donkeyModapairs.testCache_T1T2.t7'
-local meanstdCache = '/home/simonovm/datasets/cache/donkeyModapairs.meanstdCache_s'..opt.trainSplit..'_T1T2.t7'
-local datapath = '/home/simonovm/datasets/IXI'
-local patchdir = '/home/simonovm/datasets/IXI/volumes'
+local trainCache = os.getenv('HOME')..'/datasets/cache/donkeyModapairs.trainCache_s'..opt.trainSplit..'_T1T2.t7'
+local testCache = os.getenv('HOME')..'/datasets/cache/donkeyModapairs.testCache_T1T2.t7'
+local meanstdCache = os.getenv('HOME')..'/datasets/cache/donkeyModapairs.meanstdCache_s'..opt.trainSplit..'_T1T2.t7'
+local datapath = os.getenv('HOME')..'/datasets/IXI'
+local patchdir = os.getenv('HOME')..'/datasets/IXI/volumes'
 local modalitiesext = {'T1.t7img.gz', 'T2.t7img.gz'}
 
 local sampleSize = {2, opt.patchSize, opt.patchSize}
