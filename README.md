@@ -30,7 +30,7 @@ You need to move them (actually, the symlinks) from `train/pos` to `test/pos`.
 Before execution, `medipatch/src/fb-imagenet` needs to be the current directory. 
 
 * Siamese net from scratch (no rotation or scale): `CUDA_VISIBLE_DEVICES=0 qlua main.lua -backend cunn -modelName siam2d -runName base-lr1e4 -nDonkeys 3 -caffeBiases true -dataset modapairs -baselineCArch c_96_7_0_0_3_1_1,p_2,c_192_5_0_0_1_1_1,p_2,c_256_3_0_0_1_1_1,join,c_512_1_0_0_1_1_1,fin_1_1 -learningRate 1e-4 -numEpochs 300 -device 1`
-* Siamese net from scratch (rotation or scale): `CUDA_VISIBLE_DEVICES=0 qlua main.lua -backend cunn -modelName siam2d -runName base-lr1e2-rotsc -nDonkeys 3 -caffeBiases true -dataset modapairs -baselineCArch c_96_7_0_0_3_1_1,p_2,c_192_5_0_0_1_1_1,p_2,c_256_3_0_0_1_1_1,join,c_512_1_0_0_1_1_1,fin_1_1 -learningRate 1e-2 -numEpochs 300 -patchSampleRotMaxPercA 1 -patchSampleMaxScaleF 1.1 -device 1 `
+* Siamese net from scratch (rotation and scale): `CUDA_VISIBLE_DEVICES=0 qlua main.lua -backend cunn -modelName siam2d -runName base-lr1e2-rotsc -nDonkeys 3 -caffeBiases true -dataset modapairs -baselineCArch c_96_7_0_0_3_1_1,p_2,c_192_5_0_0_1_1_1,p_2,c_256_3_0_0_1_1_1,join,c_512_1_0_0_1_1_1,fin_1_1 -learningRate 1e-2 -numEpochs 300 -patchSampleRotMaxPercA 1 -patchSampleMaxScaleF 1.1 -device 1 `
 * Siamese net finetuning (no rotation or scale): `CUDA_VISIBLE_DEVICES=0 qlua main.lua -backend cunn -modelName siam2d -runName ft-notredame-b0.1-t1-lr1e4 -nDonkeys 3 -caffeBiases true -dataset modapairs -network ~/workspace/medipatch/szagoruyko/siam_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true -baselineCArch c_96_7_0_0_3_0.1_0.1,p_2,c_192_5_0_0_1_0.1_0.1,p_2,c_256_3_0_0_1_0.1_0.1,join,c_512_1_0_0_1_1_1,fin_1_1 -learningRate 1e-4 -numEpochs 300 -device 1`
 * 2ch-net finetuning (no rotation or scale): `CUDA_VISIBLE_DEVICES=0 qlua main.lua -backend cunn -modelName 2ch2d -runName ft-notredame-lr1e2 -nDonkeys 3 -caffeBiases true -dataset modapairs -network /home/simonovm/workspace/medipatch/szagoruyko/2ch_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true -baselineCArch c_96_7_0_0_3,p_2,c_192_5,p_2,c_256_3,fin -learningRate 1e-2 -numEpochs 300 -device 1`
 
@@ -39,7 +39,7 @@ Results will appear in `~/workspace/E/medipatch` by default, this can be changed
 # Trained networks #
 * [Siamese net from scratch (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
 * [Siamese net from scratch 32x32 patches (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205529-base-patch32-lr1e4/network.net)
-* [Siamese net from scratch (rotation or scale): TODO
+* [Siamese net from scratch (rotation and scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150715-102119-base-lr1e2-rotsc/network.net)
 * [Siamese net finetuning (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
 
 # Torch framework #
