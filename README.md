@@ -2,7 +2,7 @@
 * Extract archive of each modality (currently, T1 and T2 are sufficient) into the same directory `RAWDIR`
 * Now we need to align the volumes of each modality (T1 is assumed to be the modality providing the origin and scaling) and convert them to the torch format. In addition, T1 volumes without a corresponding T2 volume will be ignored. For this, `cd SOMEDIR/medipatch/src/preproc/nii2torch; bash nii2torch.sh RAWDIR ~/datasets/IXI/volumes`. If you don't like the destination directory, you need to change the paths in `donkeyModapairs.lua`.
 * The data loading algorithm in the Torch code (`dataset.lua`) requires a special data organization structure, so we will need some hacks:). Run
-``
+```
 cd ~/datasets/IXI
 mkdir -p test/pos
 mkdir -p train/pos
@@ -10,9 +10,9 @@ cd test; ln -s pos neg; cd ..
 cd train; ln -s pos neg; cd ..
 cd volumes
 find . -name "*T1.t7img.gz" -type f -exec ln -s ../../volumes/'{}' ../train/pos/'{}' ';'
-``
+```
 Now move a couple of training volumes to the test set. I chose 20 files by random:
-``
+```
 R_IXI014-HH-1236-T1.t7img.gz    R_IXI388-IOP-0973-T1.t7img.gz
 R_IXI027-Guys-0710-T1.t7img.gz  R_IXI427-IOP-1012-T1.t7img.gz
 R_IXI049-HH-1358-T1.t7img.gz    R_IXI464-IOP-1029-T1.t7img.gz
@@ -23,7 +23,7 @@ R_IXI222-Guys-0819-T1.t7img.gz  R_IXI582-Guys-1127-T1.t7img.gz
 R_IXI256-HH-1723-T1.t7img.gz    R_IXI627-Guys-1103-T1.t7img.gz
 R_IXI298-Guys-0861-T1.t7img.gz  R_IXI635-HH-2691-T1.t7img.gz
 R_IXI344-Guys-0905-T1.t7img.gz  R_IXI648-Guys-1107-T1.t7img.gz
-``
+```
 You need to move them (actually, the symlinks) from `train/pos` to `test/pos`.
 
 # Example training commands #
@@ -37,10 +37,10 @@ Before execution, `medipatch/src/fb-imagenet` needs to be the current directory.
 Results will appear in `~/workspace/E/medipatch` by default, this can be changed by the `-save` command-line parameter. You can notice that the actual structure of the network is defined by the `-baselineCArch` parameter. It's a bit cryptic but expressive and efficient, parsing is done in `modeldefs.lua`.
 
 # Trained networks #
-* [Siamese net from scratch (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/main-siam2d/20150712-205257-base-lr1e4/network.net)
-* [Siamese net from scratch 32x32 patches (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/main-siam2d/20150712-205529-base-patch32-lr1e4/network.net)
-* [Siamese net from scratch (rotation or scale): 
-* [Siamese net finetuning (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/main-siam2d/20150712-205257-base-lr1e4/network.net)
+* [Siamese net from scratch (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
+* [Siamese net from scratch 32x32 patches (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205529-base-patch32-lr1e4/network.net)
+* [Siamese net from scratch (rotation or scale): TODO
+* [Siamese net finetuning (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
 
 # Torch framework #
 Use case 1: If you just want to load a train network and play around, the default Torch framework is OK.
