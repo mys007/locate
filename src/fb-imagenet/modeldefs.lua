@@ -13,6 +13,7 @@ function createModel(opt)
     
     local model = nn.Sequential()
     local criterion   
+    local expectedInput = torch.Tensor(1, 2, opt.patchSize, opt.patchSize):zero()
         
     if opt.modelName == 'siam2d' then 
     
@@ -39,13 +40,15 @@ function createModel(opt)
                 if mType==nil then mType=a elseif tonumber(a)~=nil then table.insert(args, tonumber(a)) else table.insert(args, a) end
             end
             
-            if (mType=='c') then        --c,1output_planes,2filter_size,3padding_size,4ignored,5stride,6lrfactorweight,7lrfactorbias
+            if (mType=='c' or mType=='cb') then        --c,1output_planes,2filter_size,3padding_size,4ignored,5stride,6lrfactorweight,7lrfactorbias
                 for _,twr in pairs(towers) do
                     local conv = nn.SpatialConvolutionMM(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
                     twr:add(conv)
                    
                     if (args[6] and args[6]~=1) then conv.lrFactorW = args[6] end
                     if (args[7] and args[7]~=1) then conv.lrFactorB = args[7] end
+                    
+                    if mType=='cb' then twr:add(nn.SpatialBatchNormalization(args[1])) end
                     
                     twr:add(nn.ReLU())
                 end
@@ -65,7 +68,7 @@ function createModel(opt)
             elseif (mType=='d') then    --d,dropout_rate    //0=no dropout
                 for _,twr in pairs(towers) do
                     twr:add(nn.Dropout(args[1]))           
-                end
+                end           
                 
             elseif (mType=='join') then
                 towers = {model}     
@@ -82,7 +85,7 @@ function createModel(opt)
                 
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
                 model:add(nn.View(-1):setNumInputDims(3))
-                local lin = nn.Linear(nPlanes,1)
+                local lin = nn.Linear(model:forward(expectedInput):nElement(), 1)
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end
                 model:add(lin)        
@@ -97,6 +100,9 @@ function createModel(opt)
         
         -- SZ's models cannot be used directly. for /home/simonovm/workspace/medipatch/szagoruyko/2ch_notredame_nn.t7
         -- use -baselineCArch c_96_7_0_0_3,p_2,c_192_5,p_2,c_256_3,fin -network /home/simonovm/workspace/medipatch/szagoruyko/2ch_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true
+        -- for /home/simonovm/workspace/medipatch/szagoruyko/2chdeep_notredame_nn.t7
+        -- use -baselineCArch c_96_4_0_0_3,c_96_3,c_96_3,c_96_3,p_2,c_192_3,c_192_3,c_192_3,fin -network /home/simonovm/workspace/medipatch/szagoruyko/2chdeep_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true
+       
         local nPlanes = 2
         
         -- stage 1 : configurable convolutional part
@@ -114,7 +120,7 @@ function createModel(opt)
                 if (args[6] and args[6]~=1) then conv.lrFactorW = args[6] end
                 if (args[7] and args[7]~=1) then conv.lrFactorB = args[7] end
                 
-                model:add(nn.ReLU())
+                model:add(nn.ReLU(true))
                 nPlanes = args[1]          
                 
             elseif (mType=='p') then    --p,pooling_factor,stride(optional)
@@ -130,7 +136,7 @@ function createModel(opt)
                                
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
                 model:add(nn.View(-1):setNumInputDims(3))
-                local lin = nn.Linear(nPlanes,1)
+                local lin = nn.Linear(model:forward(expectedInput):nElement(), 1)
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end
                 model:add(lin)        
@@ -156,9 +162,9 @@ function createModel(opt)
     elseif opt.criterion == "svm" then
         criterion = nn.MultiMarginCriterion() --hinge loss
     elseif opt.criterion == "bsvm" then
-        criterion =  nn.MarginCriterion()        
+        criterion =  nn.MarginCriterion()      -- binary hinge loss (expects classes -1,1)
     elseif opt.criterion == "emb" then
-        criterion =  nn.HingeEmbeddingCriterion(opt.modelParams['embmargin'] or 1)             
+        criterion =  nn.HingeEmbeddingCriterion(opt.modelParams['embmargin'] or 1)   -- pos l2 & neg margin (expects classes -1,1)  
     else
         assert(false)
     end

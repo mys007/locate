@@ -60,6 +60,8 @@ function M.parse(arg)
     cmd:option('-numTSPatches', 32, 'num patches to sample from a single traing sample')
     cmd:option('-numTestSPatches', 32, 'num patches to sample from a single test sample')
     cmd:option('-patchSize', 64, 'w or h of a patch')
+    cmd:option('-patchSampleRotMaxPercA', 0, 'whether should rotate patches by random angle (0 = disabled ..up to 1 == full angle [-pi,pi])')
+    cmd:option('-patchSampleMaxScaleF', 1, 'max factor for randomly up/down-scaling patches. 1 == disabled.')
 	--
     cmd:option('-parSharing', true, 'use weight sharing?')	
 	cmd:option('-winit', 'default', 'weight initialization   default | He')

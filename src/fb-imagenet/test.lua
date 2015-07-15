@@ -96,7 +96,7 @@ function testBatch(inputsCPU, labelsCPU)
     iter = iter + 1
 
     inputs:resize(inputsCPU:size()):copy(inputsCPU)
-    if opt.criterion == "bsvm" then labelsCPU[torch.eq(labelsCPU,2)] = -1 end
+    if opt.criterion == "bsvm" or opt.criterion == "emb" then labelsCPU[torch.eq(labelsCPU,2)] = -1 end
     labels:resize(labelsCPU:size()):copy(labelsCPU)
 
     local err, outputs = 0, nil
@@ -120,7 +120,8 @@ function testBatch(inputsCPU, labelsCPU)
     if opt.criterion == "bsvm" or opt.criterion == "emb" then 
         outputs = outputs:view(-1)
         for i=1,labelsCPU:nElement() do
-            local it, ip = (labelsCPU[i]==1 and 1 or 2), (outputs[i]>0 and 1 or 2)
+            local isPos = outputs[i]>0; if (opt.criterion == "emb") then isPos = outputs[i]<criterion.margin end
+            local it, ip = (labelsCPU[i]==1 and 1 or 2), (isPos and 1 or 2)
             confusion.mat[it][ip] = confusion.mat[it][ip] + 1
         end
     else        

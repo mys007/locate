@@ -80,18 +80,72 @@ local function samplePatch(oW, oH, input)
 end
 
 --------------------------------
--- inflates a 1 x oH x oW patch to sampleSize[2]/10 x oH x oW. 
-local function inflatePatchTo3D(indices)
+-- pads a patch with pad at each side (or with degenPad for the degenerate dim)
+local function padPatch(indices, pad, degenPad)
     local out = {}
-    local inflation = sampleSize[2]/10
     for i=1,#indices do
-        if indices[i][1]==indices[i][2] then
-            out[i] = {indices[i][1] - inflation/2, indices[i][1] + inflation/2}
+        if indices[i][1]==indices[i][2] then 
+            out[i] = {indices[i][1] - degenPad, indices[i][2] + degenPad}
         else
-            out[i] = indices[i]
+            out[i] = {indices[i][1] - pad, indices[i][2] + pad}
         end
     end
     return out
+end
+
+--------------------------------
+-- Extracts a 2D patch from volume.
+-- Optionally performs randomized rotation (uniform d) and scaling (normal d). Surrounding data need to be available, doesn't do any zero-padding.
+-- Note that bilinear interpolation introduces smoothing artifacts 
+local function extract2DPatch(input, indices)
+    if opt.patchSampleRotMaxPercA > 0 or opt.patchSampleMaxScaleF > 1 then 
+        -- determine available space around patch
+        local availablePad = 1e10
+        for i=1,#indices do
+            if indices[i][1]~=indices[i][2] then
+                availablePad = math.min(availablePad, math.min(indices[i][1] - 1, input:size(i) - indices[i][2]))
+            end
+        end
+        
+        -- sample rotation and scaling until we fit into the available space
+        local ok = false
+        local alpha, sc, requiredPad = 0, 1, 0
+        for a=1,100 do
+            alpha = math.ceil(torch.uniform(-math.pi, math.pi) * opt.patchSampleRotMaxPercA)
+            if opt.patchSampleMaxScaleF > 1 then
+                sc = torch.normal(1, (opt.patchSampleMaxScaleF-1)/2) --in [1/f;f] with 95% prob
+                sc = math.max(math.min(sc, opt.patchSampleMaxScaleF), 1/opt.patchSampleMaxScaleF)
+            end      
+            
+            local rotFactor = math.max(math.abs(math.cos(alpha-math.pi/4)), math.abs(math.sin(alpha-math.pi/4))) / math.cos(math.pi/4) -- norm distance of box corner point to rot center          
+            requiredPad = math.ceil( opt.patchSize/2 * (sc*rotFactor - 1) )
+            if requiredPad < availablePad then
+                ok = true
+                break
+            end        
+        end
+        if not ok then return input[indices]:squeeze() end
+    
+        local patchEx = input[padPatch(indices, requiredPad, 0)]:squeeze()
+        
+        -- rotate & crop center
+        if (alpha ~= 0) then
+            patchEx = image.rotate(patchEx, alpha, 'bilinear')
+            local s = math.ceil((patchEx:size(1) - sc*opt.patchSize)/2)
+            local cidx = {s, s + math.floor(sc*opt.patchSize)-1}
+            patchEx = patchEx[{cidx, cidx}]
+        end
+
+        -- scale
+        if (sc ~= 1) then
+            patchEx = image.scale(patchEx, opt.patchSize, opt.patchSize, 'bilinear')
+        end    
+
+        return patchEx
+    
+    else
+        return input[indices]:squeeze()
+    end
 end
     
 --------------------------------
@@ -104,74 +158,70 @@ local function processImagePair(dataset, path, nSamples, traintime)
 
     local output = torch.Tensor(nSamples, 2, oW, oH)
     local doPos = paths.basename(paths.dirname(path)) == 'pos'
+    local pad3d = sampleSize[2]/10/2
 
     for s=1,nSamples do
         
-        if false then 
-            --todo: rotation: extract bigger patch surroundings (sqrt(2)-bigger), rotate it and crop centerpart. Actually, ideally should sample affine transformation-and-crop
-        else
-            local out1, out2
-            local ok = false
-                        
-            for a=1,1000 do
-                local in1idx = samplePatch(oW, oH, input1)
-                out1 = input1[in1idx]
-                
-                if not doPos then 
-                    -- rejective sampling for neg position (can't overlap too much; also don't get too close between slices [->inflate])
-                   for b=1,1000 do    
-                        local in2idx = samplePatch(oW, oH, input2)
-                        local inter, union = boxIntersectionUnion(inflatePatchTo3D(in1idx), inflatePatchTo3D(in2idx))
-                        if inter/oW/oH < maxIntersection then
-                            out2 = input2[in2idx]
-                            ok = true
-                            break
-                        end
-                    end    
-                else 
-                    out2 = input2[in1idx]
-                    ok = true
-                end
-                
-                -- ignore invalid patches (partial registration, missing values in one patch; don't assume any default val)
-                if ok and (torch.any(torch.lt(out1,0)) or torch.any(torch.lt(out2,0))) then
-                    ok = false
-                end    
+        local out1, out2
+        local ok = false
                     
-                -- ignore boring black patch pairs (they could be both similar and dissimilar)
-                -- TODO: maybe uniform patches are bad, so check for std dev
-                if ok and torch.lt(out1,1e-6):sum()>maxBlacks and torch.lt(out2,1e-6):sum()>maxBlacks then
-                    ok = false
-                end  
-                
-                if ok then break end
+        for a=1,1000 do
+            local in1idx = samplePatch(oW, oH, input1)
+            out1 = extract2DPatch(input1, in1idx)
+            if not doPos then 
+                -- rejective sampling for neg position (can't overlap too much; also don't get too close between slices [->inflate])
+               for b=1,1000 do    
+                    local in2idx = samplePatch(oW, oH, input2)
+                    --local reldist = boxCenterDistance(in1idx, in2idx) / (opt.patchSize/2)
+                    --if (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit) then                        
+                    local inter = boxIntersectionUnion(padPatch(in1idx, 0, pad3d), padPatch(in2idx, 0, pad3d)) /oW/oH
+                    if inter< maxIntersection then                        
+                        out2 = extract2DPatch(input2, in2idx)
+                        ok = true
+                        break
+                    end
+                end    
+            else 
+                out2 = extract2DPatch(input2, in1idx)
+                ok = true
             end
             
-            assert(ok, 'too many bad attemps, something went wrong with sampling from '..path)
-            local out = output[s]
-            out[1]:copy(out1)
-            out[2]:copy(out2)
+            -- ignore invalid patches (partial registration, missing values in one patch; don't assume any default val)
+            if ok and (torch.any(torch.lt(out1,0)) or torch.any(torch.lt(out2,0))) then
+                ok = false
+            end    
+                
+            -- ignore boring black patch pairs (they could be both similar and dissimilar)
+            -- TODO: maybe uniform patches are bad, so check for std dev
+            if ok and torch.lt(out1,1e-6):sum()>maxBlacks and torch.lt(out2,1e-6):sum()>maxBlacks then
+                ok = false
+            end  
             
-            -- mean/std
-            for i=1,2 do -- channels/modalities
-                if mean then out[{{i},{},{}}]:add(-mean[i]) end
-                if std then out[{{i},{},{}}]:div(std[i]) end
-            end      
-            
-            -- optionally flip
-            if traintime then
-                if torch.uniform() > 0.5 then out = image.hflip(out) end
-                if torch.uniform() > 0.5 then out = image.vflip(out) end
-                --TODO: 90deg rots
-            end        
-            
-            if false and not doPos then
-                image.display{image=out[1], zoom=2, legend='Input1', padding=1, nrow=1}
-                image.display{image=out[2], zoom=2, legend='Input2', padding=1, nrow=1}     
-                print(doPos)            
-            end        
+            if ok then break end
         end
-
+        
+        assert(ok, 'too many bad attemps, something went wrong with sampling from '..path)
+        local out = output[s]
+        out[1]:copy(out1)
+        out[2]:copy(out2)
+        
+        -- mean/std
+        for i=1,2 do -- channels/modalities
+            if mean then out[{{i},{},{}}]:add(-mean[i]) end
+            if std then out[{{i},{},{}}]:div(std[i]) end
+        end      
+        
+        -- optionally flip
+        if traintime then
+            if torch.uniform() > 0.5 then out = image.hflip(out) end
+            if torch.uniform() > 0.5 then out = image.vflip(out) end
+        end        
+        
+        if false and doPos then
+            image.display{image=out[1], zoom=2, legend='Input1', padding=1, nrow=1}
+            image.display{image=out[2], zoom=2, legend='Input2', padding=1, nrow=1}     
+            print(doPos)
+        end        
     end
 
    return output
@@ -296,7 +346,7 @@ else
    cache.std = std
    torch.save(meanstdCache, cache)
    print('Time to estimate:', tm:time().real)
-
+   
     do -- just check if mean/std look good now
        local testmean = 0
        local teststd = 0
@@ -306,6 +356,6 @@ else
           teststd  = teststd + img:std()
        end
        print('Stats of 100 randomly sampled images after normalizing. Mean: ' .. testmean/100 .. ' Std: ' .. teststd/100)
-    end   
+    end      
 end
 print('Mean: ', mean[1], mean[2], mean[3], 'Std:', std[1], std[2], std[3])
