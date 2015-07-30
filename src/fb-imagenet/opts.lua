@@ -15,7 +15,7 @@ function M.parse(arg)
 	----------------------------------------------------------------------
 	-- parse command-line options
 	--
-	cmd = torch.CmdLine(nil,nil,true)  --my fix   --TODO: wont be accepted, replace with https://github.com/davidm/lua-pythonic-optparse/blob/master/lmod/pythonic/optparse.lua
+	cmd = myrock.CmdLine()
 	cmd:text()
 	cmd:text('Torch-7 Imagenet Training script')
 	cmd:text()

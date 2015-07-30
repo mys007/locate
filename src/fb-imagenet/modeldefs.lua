@@ -6,7 +6,7 @@ require 'image'
 require 'myutils'
 require 'JitteringModule'
 require 'strict'
-require 'SpatialMaxPoolingCaffe'
+require 'SpatialMaxPoolingCaffe' --legacy
 
 function createModel(opt)
     assert(opt ~= nil)
@@ -58,7 +58,7 @@ function createModel(opt)
             elseif (mType=='p') then    --p,pooling_factor,stride(optional)
                 for _,twr in pairs(towers) do
                     if (args[1] == math.floor(args[1])) then
-                        twr:add(myrock.SpatialMaxPoolingCaffe(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil(true))
+                        twr:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
                     else
                         local sofar = model:forward(expectedInput)
                         twr:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))
@@ -125,7 +125,7 @@ function createModel(opt)
                 
             elseif (mType=='p') then    --p,pooling_factor,stride(optional)
                 if (args[1] == math.floor(args[1])) then
-                    model:add(myrock.SpatialMaxPoolingCaffe(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil(true))
+                    model:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
                 else
                     local sofar = model:forward(expectedInput)
                     model:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))

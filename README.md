@@ -42,10 +42,3 @@ Results will appear in `~/workspace/E/medipatch` by default, this can be changed
 * [Siamese net from scratch (rotation and scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150715-102119-base-lr1e2-rotsc/network.net)
 * [Siamese net finetuning (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
 
-# Torch framework #
-Use case 1: If you just want to load a train network and play around, the default Torch framework is OK.
-Use case 2: If you want to run my code, unfortunately, the current code base requires my private changed to the framework. TODO:FIX IT:). Snapshot of my whole torch directory can be found [here](http://imagine.enpc.fr/~simonovm/medipatch/torch.tar.gz). The contents can be used in two ways:
-* see what rocks I have installed (to get them into your torch, you can just copy the respective directory in `torch/extra/ROCK`)
-* if my code is broken due to sth, you can overwrite the respective files in `torch/install/share/lua/5.1/ROCK`
-
-

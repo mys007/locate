@@ -13,6 +13,7 @@ require 'paths'
 require 'xlua'
 require 'optim'
 require 'strict'
+require 'myrock'
 require 'LearningDebugger'
 
 local opts = paths.dofile('opts.lua')
