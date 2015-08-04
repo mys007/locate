@@ -6,7 +6,7 @@
 --  LICENSE file in the root directory of this source tree. An additional grant
 --  of patent rights can be found in the PATENTS file in the same directory.
 --
-package.path = "../myrock/?.lua;../?.lua;" .. package.path
+package.path = "../myrock/?.lua;" .. package.path
 require 'torch'
 require 'cutorch'
 require 'paths'
@@ -32,13 +32,6 @@ cutorch.manualSeed(opt.seed)
 -- threads
 torch.setnumthreads(opt.threads)
 print('<torch> set nb of threads to ' .. opt.threads)
-	
-
---paths.dofile('model.lua')
-
---do return end
-
-
 
 paths.dofile('data.lua')
 if opt.numIters>0 then opt.numEpochs = math.ceil(opt.numIters * opt.batchSize / datasetInfo.nTrain) end

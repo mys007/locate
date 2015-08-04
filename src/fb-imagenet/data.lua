@@ -53,6 +53,7 @@ end
 datasetInfo = {}
 
 donkeys:addjob(function() return trainLoader.classes end, function(c) datasetInfo.classes = c end)
+donkeys:addjob(function() return trainLoader.sampleSize end, function(c) datasetInfo.sampleSize = c end)
 donkeys:addjob(function() return trainLoader:sizeTrain() end, function(c) datasetInfo.nTrain = c * opt.numTSPatches end)
 donkeys:addjob(function() return trainLoader:sizeTest() end, function(c) datasetInfo.nValid = c end)
 donkeys:synchronize()

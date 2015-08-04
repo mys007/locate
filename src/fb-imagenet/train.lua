@@ -197,7 +197,11 @@ function trainBatch(inputsCPU, labelsCPU)
         
         --[[for i,module in ipairs(model:listModules()) do
             if (module.weight ~= nil and module.weight:nElement()>0 and module.pendingSharing==nil) then
-                print(i, module, torch.mean(module.output), torch.std(module.output), torch.mean(module.gradWeight), torch.std(module.gradWeight), torch.mean(module.gradBias), torch.mean(module.weight), torch.mean(module.bias)) end end
+                print(i, module, torch.mean(module.output), torch.std(module.output), torch.mean(module.gradInput), torch.std(module.gradInput))--, torch.mean(module.gradWeight), torch.std(module.gradWeight), torch.std(module.gradBias), torch.mean(module.weight), torch.mean(module.bias)) 
+            else
+                print(i, torch.type(module), torch.mean(module.output), torch.std(module.output), torch.mean(module.gradInput), torch.std(module.gradInput))
+            end
+        end
         print(torch.mean(inputs), torch.std(inputs))--]]
 
         --if (opt.batchSize>1 and iter % loggingFreqBatch == 0) then learningDebugger:visit(model, datasetInfo.nTrain/opt.batchSize/loggingFreqBatch) end

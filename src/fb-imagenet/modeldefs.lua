@@ -3,33 +3,40 @@ require 'nn'
 require 'nnx'
 require 'inn'
 require 'image'
-require 'myutils'
-require 'JitteringModule'
+require 'myrock'
 require 'strict'
 require 'SpatialMaxPoolingCaffe' --legacy
+if opt.backend=='cudnn' then require 'cudnn' end
 
 function createModel(opt)
     assert(opt ~= nil)
     
     local model = nn.Sequential()
     local criterion   
-    local expectedInput = torch.Tensor(1, 2, opt.patchSize, opt.patchSize):zero()
+    local expectedInput = torch.Tensor(1, unpack(datasetInfo.sampleSize)):zero()
         
-    if opt.modelName == 'siam2d' then 
+    if opt.modelName == 'siam2d' or opt.modelName == 'siam3d' then 
     
         -- SZ's models cannot be used directly. for /home/simonovm/workspace/medipatch/szagoruyko/siam_notredame_nn.t7
         -- use -baselineCArch c_96_7_0_0_3,p_2,c_192_5,p_2,c_256_3,join,c_512_1,fin -network /home/simonovm/workspace/medipatch/szagoruyko/siam_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true
-    
-        local par = opt.batchSize>1 and nn.Parallel(2,2) or nn.Parallel(1,1)
-        if opt.criterion == "emb" then model:add(nn.SplitTable(1, 3)); par = nn.ParallelTable() end
+   
+        local par
+        if opt.criterion == "emb" then 
+            model:add(nn.SplitTable(1, #datasetInfo.sampleSize))
+            par = nn.ParallelTable()
+        else
+            par = opt.batchSize>1 and nn.Parallel(2,2) or nn.Parallel(1,1)
+        end
         model:add(par)
-        
+  
         local towers = {nn.Sequential(), nn.Sequential()} 
         for _,twr in pairs(towers) do
             par:add(twr)
-            twr:add(nn.Reshape(1,opt.patchSize,opt.patchSize, true))
+            local size = torch.LongStorage(datasetInfo.sampleSize)
+            size[1]=1
+            twr:add(nn.Reshape(size, true))
         end
-         
+               
         local nPlanes = 1
         
         -- stage 1 : configurable convolutional part
@@ -39,10 +46,21 @@ function createModel(opt)
             for a in string.gmatch(string.trim(token), "[^_]+") do
                 if mType==nil then mType=a elseif tonumber(a)~=nil then table.insert(args, tonumber(a)) else table.insert(args, a) end
             end
-            
+    
             if (mType=='c' or mType=='cb') then        --c,1output_planes,2filter_size,3padding_size,4ignored,5stride,6lrfactorweight,7lrfactorbias
                 for _,twr in pairs(towers) do
-                    local conv = nn.SpatialConvolutionMM(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
+                    local conv
+                    if opt.patchDim==3 and opt.backend=='cunn' then
+                        if args[3] and args[3]>0 then
+                            for d=2,4 do twr:add(nn.Padding(d, args[3], 4)); twr:add(nn.Padding(d, -args[3], 4)) end
+                        end
+                        conv = nn.VolumetricConvolution(nPlanes, args[1], args[2], args[2], args[2], args[5] or 1, args[5] or 1, args[5] or 1)
+                    elseif opt.patchDim==3 and opt.backend=='cudnn' then
+                        conv = cudnn.VolumetricConvolution(nPlanes, args[1], args[2], args[2], args[2], args[5] or 1, args[5] or 1, args[5] or 1, args[3], args[3], args[3])
+                    else
+                        conv = nn.SpatialConvolutionMM(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
+                    end    
+                   
                     twr:add(conv)
                    
                     if (args[6] and args[6]~=1) then conv.lrFactorW = args[6] end
@@ -50,18 +68,22 @@ function createModel(opt)
                     
                     if mType=='cb' then twr:add(nn.SpatialBatchNormalization(args[1])) end
                     
-                    twr:add(nn.ReLU())
+                    twr:add(opt.backend=='cudnn' and cudnn.ReLU(true) or nn.ReLU(true))
                 end
           
                 nPlanes = args[1]          
                 
             elseif (mType=='p') then    --p,pooling_factor,stride(optional)
                 for _,twr in pairs(towers) do
-                    if (args[1] == math.floor(args[1])) then
-                        twr:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
+                    if opt.patchDim==3 then
+                        twr:add(myrock.CudaAdapter(nn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1])))
                     else
-                        local sofar = model:forward(expectedInput)
-                        twr:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))
+                        if (args[1] == math.floor(args[1])) then
+                            twr:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
+                        else
+                            local sofar = model:forward(expectedInput)
+                            twr:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))
+                        end
                     end
                 end
                 
@@ -77,15 +99,16 @@ function createModel(opt)
             elseif (mType=='pwd') then  --pwd,1norm
                 assert(opt.criterion == "emb")
                 for _,twr in pairs(towers) do
-                    twr:add(opt.batchSize>1 and nn.Select(4,1) or nn.Select(3,1))
-                    twr:add(opt.batchSize>1 and nn.Select(3,1) or nn.Select(2,1))           
+                    twr:add(opt.batchSize>1 and nn.Select(#datasetInfo.sampleSize+1,1) or nn.Select(#datasetInfo.sampleSize,1))
+                    twr:add(opt.batchSize>1 and nn.Select(#datasetInfo.sampleSize,1) or nn.Select(#datasetInfo.sampleSize-1,1))           
                 end                
                 model:add(nn.PairwiseDistance(args[1] or 2))
                 towers = {model}     
                 
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
-                model:add(nn.View(-1):setNumInputDims(3))
-                local lin = nn.Linear(model:forward(expectedInput):nElement(), 1)
+                model:add(nn.View(-1):setNumInputDims(#datasetInfo.sampleSize))
+                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:forward(expectedInput):nElement()             
+                local lin = nn.Linear(n, 1)
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end
                 model:add(lin)        
@@ -96,7 +119,7 @@ function createModel(opt)
         end
 
  
-    elseif opt.modelName == '2ch2d' then       
+    elseif opt.modelName == '2ch2d' or opt.modelName == '2ch3d' then       
         
         -- SZ's models cannot be used directly. for /home/simonovm/workspace/medipatch/szagoruyko/2ch_notredame_nn.t7
         -- use -baselineCArch c_96_7_0_0_3,p_2,c_192_5,p_2,c_256_3,fin -network /home/simonovm/workspace/medipatch/szagoruyko/2ch_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true
@@ -113,30 +136,48 @@ function createModel(opt)
                 if mType==nil then mType=a elseif tonumber(a)~=nil then table.insert(args, tonumber(a)) else table.insert(args, a) end
             end
             
-            if (mType=='c') then        --c,1output_planes,2filter_size,3padding_size,4ignored,5stride,6lrfactorweight,7lrfactorbias
-                local conv = nn.SpatialConvolutionMM(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
+            if (mType=='c' or mType=='cb') then        --c,1output_planes,2filter_size,3padding_size,4ignored,5stride,6lrfactorweight,7lrfactorbias
+                local conv
+                if opt.patchDim==3 and opt.backend=='cunn' then
+                    if args[3] and args[3]>0 then
+                        for d=2,4 do model:add(nn.Padding(d, args[3], 4)); model:add(nn.Padding(d, -args[3], 4)) end
+                    end
+                    conv = nn.VolumetricConvolution(nPlanes, args[1], args[2], args[2], args[2], args[5] or 1, args[5] or 1, args[5] or 1)
+                elseif opt.patchDim==3 and opt.backend=='cudnn' then
+                    conv = cudnn.VolumetricConvolution(nPlanes, args[1], args[2], args[2], args[2], args[5] or 1, args[5] or 1, args[5] or 1, args[3], args[3], args[3])
+                else
+                    conv = nn.SpatialConvolutionMM(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
+                end 
+                                
                 model:add(conv)
                
                 if (args[6] and args[6]~=1) then conv.lrFactorW = args[6] end
                 if (args[7] and args[7]~=1) then conv.lrFactorB = args[7] end
                 
-                model:add(nn.ReLU(true))
-                nPlanes = args[1]          
+                if mType=='cb' then model:add(nn.SpatialBatchNormalization(args[1])) end
+                
+                model:add(opt.backend=='cudnn' and cudnn.ReLU(true) or nn.ReLU(true))
+                nPlanes = args[1]
                 
             elseif (mType=='p') then    --p,pooling_factor,stride(optional)
-                if (args[1] == math.floor(args[1])) then
-                    model:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
+                if opt.patchDim==3 then
+                    model:add(myrock.CudaAdapter(nn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1])))
                 else
-                    local sofar = model:forward(expectedInput)
-                    model:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))
-                end
+                    if (args[1] == math.floor(args[1])) then
+                        model:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
+                    else
+                        local sofar = model:forward(expectedInput)
+                        model:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))
+                    end
+                end            
                 
             elseif (mType=='d') then    --d,dropout_rate    //0=no dropout
                 model:add(nn.Dropout(args[1]))           
                                
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
-                model:add(nn.View(-1):setNumInputDims(3))
-                local lin = nn.Linear(model:forward(expectedInput):nElement(), 1)
+                model:add(nn.View(-1):setNumInputDims(#datasetInfo.sampleSize))
+                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:forward(expectedInput):nElement()             
+                local lin = nn.Linear(n, 1)            
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end
                 model:add(lin)        

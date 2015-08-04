@@ -343,7 +343,7 @@ local function tableToOutput(self, dataTable, scalarTable)
    local data, scalarLabels, labels
    local quantity = #scalarTable
    local samplesPerDraw
-   if dataTable[1]:dim() == 3 then samplesPerDraw = 1
+   if dataTable[1]:dim() == #self.sampleSize then samplesPerDraw = 1
    else samplesPerDraw = dataTable[1]:size(1) end
    if quantity == 1 and samplesPerDraw == 1 then
       data = dataTable[1]
@@ -351,8 +351,7 @@ local function tableToOutput(self, dataTable, scalarTable)
       labels = torch.LongTensor(#(self.classes)):fill(-1)
       labels[scalarLabels] = 1
    else
-      data = torch.Tensor(quantity * samplesPerDraw,
-                          self.sampleSize[1], self.sampleSize[2], self.sampleSize[3])
+      data = torch.Tensor(quantity * samplesPerDraw, unpack(self.sampleSize))
       scalarLabels = torch.LongTensor(quantity * samplesPerDraw)
       labels = torch.LongTensor(quantity * samplesPerDraw, #(self.classes)):fill(-1)
       for i=1,#dataTable do

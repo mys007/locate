@@ -12,6 +12,7 @@ require 'myutils'
 paths.dofile('dataset.lua')
 require 'util'
 require 'torchzlib'
+local pe = require 'patchExtraction'
 
 -- This file contains the data-loading logic and details.
 -- It is run by each data-loader thread.
@@ -25,9 +26,16 @@ local datapath = os.getenv('HOME')..'/datasets/IXI'
 local patchdir = os.getenv('HOME')..'/datasets/IXI/volumes'
 local modalitiesext = {'T1.t7img.gz', 'T2.t7img.gz'}
 
-local sampleSize = {2, opt.patchSize, opt.patchSize}
-local maxIntersection = 0.3
-local maxBlacks = sampleSize[2]*sampleSize[3]/2
+local sampleSize, maxIntersection, maxBlacks
+if pe.isVol then
+    sampleSize = {2, opt.patchSize, opt.patchSize, opt.patchSize}
+    maxIntersection = 0.3
+    maxBlacks = sampleSize[2]*sampleSize[3]*sampleSize[4]/2
+else
+    sampleSize = {2, opt.patchSize, opt.patchSize}
+    maxIntersection = 0.3
+    maxBlacks = sampleSize[2]*sampleSize[3]/2
+end    
 
 -- channel-wise mean and std. Calculate or load them from disk later in the script.
 local mean,std
@@ -59,27 +67,7 @@ local function loadImagePair(path)
     return input1, input2
 end
 
---------------------------------
--- samples oH x oW patch from random slice of random dimension (in case of volumetric input)
-local function samplePatch(oW, oH, input)
-    if input:dim()==3 then
-        local dim = math.ceil(torch.uniform(1e-2, 3))
-        local sliceidx = math.ceil(torch.uniform(1e-2, input:size(dim)))
-        local sizes = torch.totable(input:size())        
-        table.remove(sizes, dim)
-        local x1 = math.ceil(torch.uniform(1e-2, sizes[2]-oW))
-        local y1 = math.ceil(torch.uniform(1e-2, sizes[1]-oH))                    
-        local indices = {{y1,y1 + oH-1}, {x1,x1 + oW-1}}
-        table.insert(indices,dim,{sliceidx, sliceidx})
-        return indices
-    else
-        local x1 = math.ceil(torch.uniform(1e-2, input:size(2)-oW))
-        local y1 = math.ceil(torch.uniform(1e-2, input:size(1)-oH))                
-        return {{y1,y1 + oH-1}, {x1,x1 + oW-1}}
-    end
-end
-
---------------------------------
+------------------------------
 -- pads a patch with pad at each side (or with degenPad for the degenerate dim)
 local function padPatch(indices, pad, degenPad)
     local out = {}
@@ -94,71 +82,15 @@ local function padPatch(indices, pad, degenPad)
 end
 
 --------------------------------
--- Extracts a 2D patch from volume.
--- Optionally performs randomized rotation (uniform d) and scaling (normal d). Surrounding data need to be available, doesn't do any zero-padding.
--- Note that bilinear interpolation introduces smoothing artifacts 
-local function extract2DPatch(input, indices)
-    if opt.patchSampleRotMaxPercA > 0 or opt.patchSampleMaxScaleF > 1 then 
-        -- determine available space around patch
-        local availablePad = 1e10
-        for i=1,#indices do
-            if indices[i][1]~=indices[i][2] then
-                availablePad = math.min(availablePad, math.min(indices[i][1] - 1, input:size(i) - indices[i][2]))
-            end
-        end
-        
-        -- sample rotation and scaling until we fit into the available space
-        local ok = false
-        local alpha, sc, requiredPad = 0, 1, 0
-        for a=1,100 do
-            alpha = math.ceil(torch.uniform(-math.pi, math.pi) * opt.patchSampleRotMaxPercA)
-            if opt.patchSampleMaxScaleF > 1 then
-                sc = torch.normal(1, (opt.patchSampleMaxScaleF-1)/2) --in [1/f;f] with 95% prob
-                sc = math.max(math.min(sc, opt.patchSampleMaxScaleF), 1/opt.patchSampleMaxScaleF)
-            end      
-            
-            local rotFactor = math.max(math.abs(math.cos(alpha-math.pi/4)), math.abs(math.sin(alpha-math.pi/4))) / math.cos(math.pi/4) -- norm distance of box corner point to rot center          
-            requiredPad = math.ceil( opt.patchSize/2 * (sc*rotFactor - 1) )
-            if requiredPad < availablePad then
-                ok = true
-                break
-            end        
-        end
-        if not ok then return input[indices]:squeeze() end
-    
-        local patchEx = input[padPatch(indices, requiredPad, 0)]:squeeze()
-        
-        -- rotate & crop center
-        if (alpha ~= 0) then
-            patchEx = image.rotate(patchEx, alpha, 'bilinear')
-            local s = math.ceil((patchEx:size(1) - sc*opt.patchSize)/2)
-            local cidx = {s, s + math.floor(sc*opt.patchSize)-1}
-            patchEx = patchEx[{cidx, cidx}]
-        end
-
-        -- scale
-        if (sc ~= 1) then
-            patchEx = image.scale(patchEx, opt.patchSize, opt.patchSize, 'bilinear')
-        end    
-
-        return patchEx
-    
-    else
-        return input[indices]:squeeze()
-    end
-end
-    
---------------------------------
 local function processImagePair(dataset, path, nSamples, traintime)
     assert(traintime~=nil)
     collectgarbage()
     local input1, input2 = loadImagePair(path)
-    local oW = sampleSize[3]
-    local oH = sampleSize[2]   
+    local oW, oH, oD
+    if pe.isVol then oW, oH, oD = sampleSize[4], sampleSize[3], sampleSize[2] else oW, oH, oD = sampleSize[3], sampleSize[2], 1 end
 
-    local output = torch.Tensor(nSamples, 2, oW, oH)
+    local output = pe.isVol and torch.Tensor(nSamples, 2, oD, oH, oW) or torch.Tensor(nSamples, 2, oW, oH)
     local doPos = paths.basename(paths.dirname(path)) == 'pos'
-    local pad3d = sampleSize[2]/10/2
 
     for s=1,nSamples do
         
@@ -166,23 +98,32 @@ local function processImagePair(dataset, path, nSamples, traintime)
         local ok = false
                     
         for a=1,1000 do
-            local in1idx = samplePatch(oW, oH, input1)
-            out1 = extract2DPatch(input1, in1idx)
+            local in1idx = pe.samplePatch(oW, oH, oD, input1)
+            out1 = pe.extractPatch(input1, in1idx)
             if not doPos then 
                 -- rejective sampling for neg position (can't overlap too much; also don't get too close between slices [->inflate])
                for b=1,1000 do    
-                    local in2idx = samplePatch(oW, oH, input2)
-                    --local reldist = boxCenterDistance(in1idx, in2idx) / (opt.patchSize/2)
-                    --if (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit) then                        
-                    local inter = boxIntersectionUnion(padPatch(in1idx, 0, pad3d), padPatch(in2idx, 0, pad3d)) /oW/oH
-                    if inter< maxIntersection then                        
-                        out2 = extract2DPatch(input2, in2idx)
-                        ok = true
+                    local in2idx = pe.samplePatch(oW, oH, oD, input2)
+                    local inter
+                    if pe.isVol then
+                        --local reldist = boxCenterDistance(in1idx, in2idx) / (opt.patchSize/2)
+                        --ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit)                        
+                        local inter = boxIntersectionUnion(in1idx, in2idx) /oW/oH/oD
+                        ok = (inter < maxIntersection)
+                    else
+                        --local reldist = boxCenterDistance(in1idx, in2idx) / (opt.patchSize/2)
+                        --ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit)
+                        local pad3d = sampleSize[2]/10/2
+                        local inter = boxIntersectionUnion(padPatch(in1idx, 0, pad3d), padPatch(in2idx, 0, pad3d)) /oW/oH
+                        ok = (inter < maxIntersection)
+                    end    
+                    if ok then                        
+                        out2 = pe.extractPatch(input2, in2idx)
                         break
                     end
                 end    
             else 
-                out2 = extract2DPatch(input2, in1idx)
+                out2 = pe.extractPatch(input2, in1idx)
                 ok = true
             end
             
@@ -207,19 +148,19 @@ local function processImagePair(dataset, path, nSamples, traintime)
         
         -- mean/std
         for i=1,2 do -- channels/modalities
-            if mean then out[{{i},{},{}}]:add(-mean[i]) end
-            if std then out[{{i},{},{}}]:div(std[i]) end
+            if mean then out[i]:add(-mean[i]) end
+            if std then out[i]:div(std[i]) end
         end      
         
         -- optionally flip
         if traintime then
-            if torch.uniform() > 0.5 then out = image.hflip(out) end
-            if torch.uniform() > 0.5 then out = image.vflip(out) end
+            for d=2,opt.patchDim+1 do
+                if torch.uniform() > 0.5 then out = image.flip(out,d) end   
+            end 
         end        
         
         if false and doPos then
-            image.display{image=out[1], zoom=2, legend='Input1', padding=1, nrow=1}
-            image.display{image=out[2], zoom=2, legend='Input2', padding=1, nrow=1}     
+            pe.plotPatches(out)
             print(doPos)
         end        
     end
@@ -358,4 +299,4 @@ else
        print('Stats of 100 randomly sampled images after normalizing. Mean: ' .. testmean/100 .. ' Std: ' .. teststd/100)
     end      
 end
-print('Mean: ', mean[1], mean[2], mean[3], 'Std:', std[1], std[2], std[3])
+print('Mean: ', mean[1], mean[2], 'Std:', std[1], std[2])

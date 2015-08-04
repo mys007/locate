@@ -60,6 +60,7 @@ function M.parse(arg)
     cmd:option('-numTSPatches', 32, 'num patches to sample from a single traing sample')
     cmd:option('-numTestSPatches', 32, 'num patches to sample from a single test sample')
     cmd:option('-patchSize', 64, 'w or h of a patch')
+    cmd:option('-patchDim', 2, '3D or 2D patches')
     cmd:option('-patchSampleRotMaxPercA', 0, 'whether should rotate patches by random angle (0 = disabled ..up to 1 == full angle [-pi,pi])')
     cmd:option('-patchSampleMaxScaleF', 1, 'max factor for randomly up/down-scaling patches. 1 == disabled.')
 	--
@@ -81,11 +82,10 @@ function M.parse(arg)
     return opt, cmd
 end
 
-nlprint = nil
+nlprint = print --save non-logging print before cmd:log
 
 function M.log(path, opt)
-    if not nlprint then nlprint = print end --save non-logging print
     cmd:log(path, opt)
 end
-    
+
 return M
