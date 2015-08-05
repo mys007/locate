@@ -84,8 +84,4 @@ end
 
 nlprint = print --save non-logging print before cmd:log
 
-function M.log(path, opt)
-    cmd:log(path, opt)
-end
-
 return M

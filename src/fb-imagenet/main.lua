@@ -41,7 +41,7 @@ paths.dofile('model.lua')
 local _,fname = sys.fpath()
 opt.save = paths.concat(opt.save, fname:gsub('.lua','') .. '-' .. opt.modelName, opt.runName)
 os.execute('mkdir -p "' .. opt.save .. '"')
-opts.log(paths.concat(opt.save, 'stdout.log'), opt)
+cmd:log(paths.concat(opt.save, 'stdout.log'), opt)
 
 print('<cmdline> CUDA_VISIBLE_DEVICES='..(opt.device-1)..' qlua main.lua ' .. table.concat(arg, " "))
 print('Using model with ' .. parameters:nElement() .. ' parameters')

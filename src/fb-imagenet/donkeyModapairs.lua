@@ -67,20 +67,6 @@ local function loadImagePair(path)
     return input1, input2
 end
 
-------------------------------
--- pads a patch with pad at each side (or with degenPad for the degenerate dim)
-local function padPatch(indices, pad, degenPad)
-    local out = {}
-    for i=1,#indices do
-        if indices[i][1]==indices[i][2] then 
-            out[i] = {indices[i][1] - degenPad, indices[i][2] + degenPad}
-        else
-            out[i] = {indices[i][1] - pad, indices[i][2] + pad}
-        end
-    end
-    return out
-end
-
 --------------------------------
 local function processImagePair(dataset, path, nSamples, traintime)
     assert(traintime~=nil)
@@ -114,7 +100,7 @@ local function processImagePair(dataset, path, nSamples, traintime)
                         --local reldist = boxCenterDistance(in1idx, in2idx) / (opt.patchSize/2)
                         --ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit)
                         local pad3d = sampleSize[2]/10/2
-                        local inter = boxIntersectionUnion(padPatch(in1idx, 0, pad3d), padPatch(in2idx, 0, pad3d)) /oW/oH
+                        local inter = boxIntersectionUnion(boxPad(in1idx, 0, pad3d), boxPad(in2idx, 0, pad3d)) /oW/oH
                         ok = (inter < maxIntersection)
                     end    
                     if ok then                        
