@@ -1,3 +1,9 @@
+# Dependencies
+* Torch et al (TODO: explicitely state rocks?)
+* ITK4. For preprocessing.
+* [SimpleITK with Python wrapper](http://www.itk.org/Wiki/SimpleITK/GettingStarted). SimpleITK actually provides a Lua SWIG stub but it's halfbaked (no access to memory) and I didn't manage to make it work properly. Thus, we use ITK from Python.
+* [fblualib](https://github.com/facebook/fblualib/blob/master/INSTALL.md). One-step installation works fine but need to replace `rocks=.........` with `rocks="util python"` in `fblualib/build.sh` first. We use [fb-python](https://github.com/facebook/fblualib/blob/master/fblualib/python/README.md).
+
 # Preprocessing the IXI dataset #
 * Extract archive of each modality (currently, T1 and T2 are sufficient) into the same directory `RAWDIR`
 * Now we need to align the volumes of each modality (T1 is assumed to be the modality providing the origin and scaling) and convert them to the torch format. In addition, T1 volumes without a corresponding T2 volume will be ignored. For this, `cd SOMEDIR/medipatch/src/preproc/nii2torch; bash nii2torch.sh RAWDIR ~/datasets/IXI/volumes`. If you don't like the destination directory, you need to change the paths in `donkeyModapairs.lua`.

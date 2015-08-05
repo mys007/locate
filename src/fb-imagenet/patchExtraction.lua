@@ -4,68 +4,13 @@ assert(opt.patchDim==3 or opt.patchDim==2)
 patchExtraction.isVol = opt.patchDim==3
 
 if patchExtraction.isVol then
-    __threadid  = 0
-    os.execute("sleep " .. tonumber(__threadid)*3) --needs just one initialization
-    python = require "lunaticpython"
-    python.execute("import sys; sys.dont_write_bytecode = True") --don't clutter with pyc
-    local patchEx3D = python.import("patchEx3D")
-    python.execute("import numpy as np")
     
+    --require 'qtgui' --weird, fb.python breaks it if it's required later
+    local py = require('fb.python')
+    py.exec("import sys; sys.dont_write_bytecode = True") --don't clutter with pyc
+    py.exec("sys.path.append('"..paths.dirname(paths.thisfile()).."')")
+    local patchEx3D = py.import("patchEx3D")
     
-    
-    
-local ffi=require 'ffi'
-
-ffi.cdef[[
-void THFloatStorage_clearFlag(THFloatStorage *storage, const char flag);
-]]
-
-function nparrayToTensor(npAr, shared)
-    assert(npAr.dtype.name == 'float32')
-    local ptr = tonumber(ffi.cast('intptr_t',npAr.__array_interface__['data'][0]))
-    local shape = npAr.shape
-    local nelem = npAr.size
-    local dims = npAr.ndim
-    
-    local sizes = torch.LongStorage(dims)
-    for i=1,dims do sizes[i] = shape[i-1] end
-    
-    if shared then 
-        local storage = torch.FloatStorage(nelem, ptr)
-        ffi.C['THFloatStorage_clearFlag'](ffi.cast('THFloatStorage*', torch.pointer(storage)), 6) -- TH_STORAGE_RESIZABLE & TH_STORAGE_FREEMEM
-        
-        local tensor =  torch.FloatTensor(storage, 1, sizes)
-        --tensor.pyref = npAr --prevent npAr from being gc-ed (and thus the py-object possibly freed) while the storage is in use. Doesn't work!
-        return {tensor, npAr}
-    else
-        local tensor = torch.FloatTensor(sizes)
-        ffi.copy(torch.data(tensor), ffi.cast('void*',ptr), nelem*4)
-        return tensor
-    end    
-    --[[assert(python.eval(pyName..".dtype.name") == 'float32')
-    local ptr = tonumber(ffi.cast('intptr_t',python.eval(pyName..".__array_interface__['data'][0]")))
-    local shape = python.eval(pyName..".shape")
-    local nelem = python.eval(pyName..".size")
-    local dims = python.eval(pyName..".ndim")
-    
-    local sizes = torch.LongStorage(dims)
-    for i=1,dims do sizes[i] = shape[i-1] end
-    
-    if shared then 
-        local storage = torch.FloatStorage(nelem, ptr)
-        ffi.C['THFloatStorage_clearFlag'](ffi.cast('THFloatStorage*', torch.pointer(storage)), 6) -- TH_STORAGE_RESIZABLE & TH_STORAGE_FREEMEM
-        return torch.FloatTensor(storage, 1, sizes)
-    else
-        local tensor = torch.FloatTensor(sizes)
-        ffi.copy(torch.data(tensor), ffi.cast('void*',ptr), nelem*4)
-        return tensor
-    end--]]
-end
-
-   ---NOTE: this can then be moved to C-code  (can use C intrafce of numpy, like wrapper from ITK)
-   ----NOTE: the other way round: http://stackoverflow.com/questions/4355524/getting-data-from-ctypes-array-into-numpy , http://stackoverflow.com/questions/7543675/how-to-convert-pointer-to-c-array-to-python-array
-    
-
     --------------------------------
     -- samples oD x oH x oW patch
     function patchExtraction.samplePatch(oW, oH, oD, input)
@@ -102,10 +47,9 @@ end
                 
                 --compute inverse transformation of a axis-aligned box centered at (0,0,0) with vertices at points like (1,1,1) 
                 -- to get the source area, the bounding box of which we need to crop (defined as box, at least as big as destbox)
-                local pyBox = patchEx3D.get_source_box(axis[1], axis[2], axis[3], alpha, sc)
-                local luaBox = nparrayToTensor(pyBox, true)[1]
-                local mi = torch.cmin(luaBox:min(1):squeeze(), -1) * opt.patchSize/2
-                local ma = torch.cmax(luaBox:max(1):squeeze(), 1) * opt.patchSize/2
+                local box = py.eval(patchEx3D.get_source_box(axis, alpha, sc))
+                local mi = torch.cmin(box:min(1):squeeze(), -1) * opt.patchSize/2
+                local ma = torch.cmax(box:max(1):squeeze(), 1) * opt.patchSize/2
                 local srcIndices = {}
                 for i=1,#indices do srcIndices[i] = {math.floor(patchCenter[i] + mi[i]), math.ceil(patchCenter[i] + ma[i])} end
                 
@@ -121,15 +65,12 @@ end
             if not ok then return input[indices]:squeeze() end
         
             --transform the crop
-            local buffPy = python.eval("np.empty(("..srcPatch:size(1)..','..srcPatch:size(2)..','..srcPatch:size(3)..'), dtype=np.float32 )')
-            local buffLua = nparrayToTensor(buffPy, true) --todo: this should be more like "create np.array for patchEx"
-            buffLua[1]:copy(srcPatch)
-            patchEx3D.transform_volume(axis[1], axis[2], axis[3], alpha, sc, buffPy, srcCenter[1], srcCenter[2], srcCenter[3])
+            local dstPatch = py.eval(patchEx3D.transform_volume(axis, alpha, sc, srcCenter, srcPatch))
             
             --finally, extract just the center crop of the result
             local cidx = {}
             for i=1,#indices do cidx[i] = {math.ceil(srcCenter[i] - opt.patchSize/2 + 1), math.floor(srcCenter[i] + opt.patchSize/2 + 1)} end
-            local patchEx = buffLua[1][cidx]:clone() 
+            local patchEx = dstPatch[cidx]:clone() 
                         
             --image.display{image=srcPatch, zoom=4, legend='Input1', padding=1, nrow=math.ceil(math.sqrt(srcPatch:size(1)))}
             --image.display{image=buffLua, zoom=4, legend='Input2', padding=1, nrow=math.ceil(math.sqrt(buffLua:size(1)))} 
