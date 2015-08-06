@@ -1,8 +1,11 @@
 # Dependencies
-* Torch et al (TODO: explicitely state rocks?)
-* ITK4. For preprocessing.
-* [SimpleITK with Python wrapper](http://www.itk.org/Wiki/SimpleITK/GettingStarted). SimpleITK actually provides a Lua SWIG stub but it's halfbaked (no access to memory) and I didn't manage to make it work properly. Thus, we use ITK from Python.
-* [fblualib](https://github.com/facebook/fblualib/blob/master/INSTALL.md). One-step installation works fine but need to replace `rocks=.........` with `rocks="util python"` in `fblualib/build.sh` first. We use [fb-python](https://github.com/facebook/fblualib/blob/master/fblualib/python/README.md).
+* Torch et al (Especially cudnn v3. TODO: explicitely state rocks?)
+* ITK4.7 For preprocessing.
+
+Two steps are necessary in addition:
+- install myrock: `cd src/myrock; luarocks install myrock-1.0-0.rockspec`
+- compile itkslave: `cd src/fb-imagent/itkslave; mkdir build; cd build; cmake ..; make`. This needs to be done after any update to itkslave:).
+
 
 # Preprocessing the IXI dataset #
 * Extract archive of each modality (currently, T1 and T2 are sufficient) into the same directory `RAWDIR`

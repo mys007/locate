@@ -5,11 +5,8 @@ patchExtraction.isVol = opt.patchDim==3
 
 if patchExtraction.isVol then
     
-    --require 'qtgui' --weird, fb.python breaks it if it's required later
-    local py = require('fb.python')
-    py.exec("import sys; sys.dont_write_bytecode = True") --don't clutter with pyc
-    py.exec("sys.path.append('"..paths.dirname(paths.thisfile()).."')")
-    local patchEx3D = py.import("patchEx3D")
+    --package.path = "itkslave/?.lua;" .. package.path
+    local itkslave = require('itkslave.itkslave')
     
     --------------------------------
     -- samples oD x oH x oW patch
@@ -44,36 +41,41 @@ if patchExtraction.isVol then
                     sc = torch.normal(1, (opt.patchSampleMaxScaleF-1)/2) --in [1/f;f] with 95% prob
                     sc = math.max(math.min(sc, opt.patchSampleMaxScaleF), 1/opt.patchSampleMaxScaleF)
                 end
-                
+      
                 --compute inverse transformation of a axis-aligned box centered at (0,0,0) with vertices at points like (1,1,1) 
                 -- to get the source area, the bounding box of which we need to crop (defined as box, at least as big as destbox)
-                local box = py.eval(patchEx3D.get_source_box(axis, alpha, sc))
+                local box = itkslave.getSourceBox(axis, alpha, sc)               
                 local mi = torch.cmin(box:min(1):squeeze(), -1) * opt.patchSize/2
                 local ma = torch.cmax(box:max(1):squeeze(), 1) * opt.patchSize/2
-                local srcIndices = {}
-                for i=1,#indices do srcIndices[i] = {math.floor(patchCenter[i] + mi[i]), math.ceil(patchCenter[i] + ma[i])} end
                 
-                --try to crop it             
-                ok, srcPatch = pcall(function() return input[srcIndices] end)
+                --try to crop it  
+                local srcIndices = {}
+                ok = true
+                for i=1,#indices do                 
+                    srcIndices[i] = {math.floor(patchCenter[i] + mi[i]), math.ceil(patchCenter[i] + ma[i])} 
+                    if srcIndices[i][1]<1 or srcIndices[i][2]>input:size(i) then ok = false; break end
+                end
+
                 if ok then
+                    srcPatch = input[srcIndices]
                     srcCenter = {} --patchCenter in srcPatch coordinates 
                     for i=1,#indices do srcCenter[i] = patchCenter[i] - srcIndices[i][1] end
                     break
-                end    
+                end
             end
             
             if not ok then return input[indices]:squeeze() end
         
             --transform the crop
-            local dstPatch = py.eval(patchEx3D.transform_volume(axis, alpha, sc, srcCenter, srcPatch))
-            
+            local dstPatch = itkslave.transformVolume(axis, alpha, sc, srcCenter, srcPatch)
+
             --finally, extract just the center crop of the result
             local cidx = {}
             for i=1,#indices do cidx[i] = {math.ceil(srcCenter[i] - opt.patchSize/2 + 1), math.floor(srcCenter[i] + opt.patchSize/2 + 1)} end
             local patchEx = dstPatch[cidx]:clone() 
                         
             --image.display{image=srcPatch, zoom=4, legend='Input1', padding=1, nrow=math.ceil(math.sqrt(srcPatch:size(1)))}
-            --image.display{image=buffLua, zoom=4, legend='Input2', padding=1, nrow=math.ceil(math.sqrt(buffLua:size(1)))} 
+            --image.display{image=dstPatch, zoom=4, legend='Input2', padding=1, nrow=math.ceil(math.sqrt(dstPatch:size(1)))} 
             --image.display{image=patchEx, zoom=4, legend='Fin', padding=1, nrow=math.ceil(math.sqrt(patchEx:size(1)))}  
             --print(alpha, sc, axis[1], axis[2], axis[3])          
                
@@ -120,6 +122,7 @@ else
     function patchExtraction.extractPatch(input, indices)
         if opt.patchSampleRotMaxPercA > 0 or opt.patchSampleMaxScaleF > 1 then 
             -- determine available space around patch
+                --note: the inverse transformation idea used at teh 3D version is much nicer:)
             local availablePad = 1e10
             for i=1,#indices do
                 if indices[i][1]~=indices[i][2] then
