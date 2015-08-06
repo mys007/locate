@@ -46,8 +46,11 @@ Before execution, `medipatch/src/fb-imagenet` needs to be the current directory.
 Results will appear in `~/workspace/E/medipatch` by default, this can be changed by the `-save` command-line parameter. You can notice that the actual structure of the network is defined by the `-baselineCArch` parameter. It's a bit cryptic but expressive and efficient, parsing is done in `modeldefs.lua`.
 
 # Trained networks #
+2D
 * [Siamese net from scratch (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
 * [Siamese net from scratch 32x32 patches (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205529-base-patch32-lr1e4/network.net)
-* [Siamese net from scratch (rotation and scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150715-102119-base-lr1e2-rotsc/network.net)
+* [Siamese net from scratch (rotation and scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150805-124204-base-lr1e2-rotsc-fixfullrot-ex/network.net) --updated 6.8.
 * [Siamese net finetuning (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
 
+3D
+* [Siamese net 16x16x16 (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam3d/20150804-022816-base-ps16-5_3p_3-lr1e2-cudnn/network.net)
