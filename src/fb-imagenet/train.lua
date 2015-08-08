@@ -31,14 +31,13 @@ if (opt.network ~= '' and opt.networkLoadOpt and opt.numEpochs > 0) then
     config = torch.load(opt.network..'.optconfig')     
 end
 
-local dispatcherRing = DispatcherRing(math.max(1,opt.nDonkeys))
-
 local trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
 
 -------------------------------------------------------------------------------------------------------------
 function train()
     model:training()
-
+    donkeys:specific(true)
+    
     -- next epoch
     model.epoch = model.epoch + 1     
     iter = 0
@@ -47,9 +46,7 @@ function train()
     if config.rngCuda then cutorch.setRNGState(config.rngCuda) end
     if config.rngCpu then 
         torch.setRNGState(config.rngCpu[0]) 
-        donkeys:specific(true)
         for id=1,math.min(opt.nDonkeys, #config.rngCpu) do local s = config.rngCpu[id]; donkeys:addjob(id, function() return torch.setRNGState(s) end) end
-        donkeys:specific(false)
     end
 
     -- do one epoch
@@ -64,13 +61,13 @@ function train()
     
     assert(opt.batchSize % opt.numTSPatches == 0)
 
-    --TODO: randperm instead of random samplingthis is a source of nondeterminism, threads may deliver in different order. 
-    -- proposal: randperm is parted between threads. main thread has #thread slots, where it stores the results. at each new store, it tries to process the ringbuffer sequentially
+    -- threads may deliver in different order, dispatcher prevents this nondeterminism. 
+    -- now randsamp; if randperm wanted: generate randperm in main and split it to threads (todo)
+    local dispatcherRing = DispatcherRing(math.max(1,opt.nDonkeys))
     local semaIds = dispatcherRing:getSemaphoreIds()
+    
     for i=1,nIters do
-        -- queue jobs to data-workers
-        
-        donkeys:addjob(
+        donkeys:addjob(1+(i-1)%opt.nDonkeys,
             -- the job callback (runs in data-worker thread)
             function()
                 local inputs, labels = trainLoader:sample(opt.batchSize / opt.numTSPatches)
@@ -117,9 +114,7 @@ function train()
     -- save the exact rng state
     config.rngCuda = cutorch.getRNGState()
     config.rngCpu = {[0]=torch.getRNGState()}
-    donkeys:specific(true)
-    for id=1,opt.nDonkeys do donkeys:addjob(id, function() return torch.getRNGState() end, function(c) config.rngCpu[id] = c end) end
-    donkeys:specific(false)    
+    for id=1,opt.nDonkeys do donkeys:addjob(id, function() return torch.getRNGState() end, function(c) config.rngCpu[id] = c end) end 
 
     -- save/log current net (a clean model without any gradients, inputs,... ; it takes less storage)
     cleanModelSave(model, parameters, config, opt, 'network.net')

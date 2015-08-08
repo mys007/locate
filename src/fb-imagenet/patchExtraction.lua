@@ -13,7 +13,7 @@ if patchExtraction.isVol then
     function patchExtraction.samplePatch(oW, oH, oD, input)
         local z1 = math.ceil(torch.uniform(1e-2, input:size(1)-oD))
         local y1 = math.ceil(torch.uniform(1e-2, input:size(2)-oH))
-        local x1 = math.ceil(torch.uniform(1e-2, input:size(3)-oW))
+        local x1 = math.ceil(torch.uniform(1e-2, input:size(3)-oW))       
         return {{z1,z1 + oD-1}, {y1,y1 + oH-1}, {x1,x1 + oW-1}}
     end
 

@@ -73,10 +73,12 @@ function createModel(opt)
           
                 nPlanes = args[1]          
                 
-            elseif (mType=='p') then    --p,pooling_factor,stride(optional)
+            elseif (mType=='p') then    --p,pooling_factor,stride(optional),pad(optional/cudnn)
                 for _,twr in pairs(towers) do
-                    if opt.patchDim==3 then
+                    if opt.patchDim==3 and opt.backend=='cunn' then
                         twr:add(myrock.CudaAdapter(nn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1])))
+                    elseif opt.patchDim==3 and opt.backend=='cudnn' then
+                        twr:add(cudnn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1], args[3] or 0, args[3] or 0, args[3] or 0))
                     else
                         if (args[1] == math.floor(args[1])) then
                             twr:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
@@ -157,11 +159,13 @@ function createModel(opt)
                 if mType=='cb' then model:add(nn.SpatialBatchNormalization(args[1])) end
                 
                 model:add(opt.backend=='cudnn' and cudnn.ReLU(true) or nn.ReLU(true))
-                nPlanes = args[1]
+                nPlanes = args[1]             
                 
-            elseif (mType=='p') then    --p,pooling_factor,stride(optional)
-                if opt.patchDim==3 then
+            elseif (mType=='p') then    --p,pooling_factor,stride(optional),pad(optional/cudnn)
+                if opt.patchDim==3 and opt.backend=='cunn' then
                     model:add(myrock.CudaAdapter(nn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1])))
+                elseif opt.patchDim==3 and opt.backend=='cudnn' then
+                    model:add(cudnn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1], args[3] or 0, args[3] or 0, args[3] or 0))
                 else
                     if (args[1] == math.floor(args[1])) then
                         model:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())

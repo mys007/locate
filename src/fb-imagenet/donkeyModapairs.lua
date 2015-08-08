@@ -68,8 +68,17 @@ local function loadImagePair(path)
 end
 
 --------------------------------
+local function extractPatch(input, indices)
+    local out = pe.extractPatch(input, indices)
+    -- ignore invalid patches (partial registration, missing values in one patch; don't assume any default val)
+    local allvalid = not torch.any(torch.lt(out,0))
+    return out, allvalid 
+end
+
+--------------------------------
 local function processImagePair(dataset, path, nSamples, traintime)
     assert(traintime~=nil)
+    
     collectgarbage()
     local input1, input2 = loadImagePair(path)
     local oW, oH, oD
@@ -79,44 +88,41 @@ local function processImagePair(dataset, path, nSamples, traintime)
     local doPos = paths.basename(paths.dirname(path)) == 'pos'
 
     for s=1,nSamples do
-        
         local out1, out2
         local ok = false
                     
         for a=1,1000 do
             local in1idx = pe.samplePatch(oW, oH, oD, input1)
-            out1 = pe.extractPatch(input1, in1idx)
+            
             if not doPos then 
                 -- rejective sampling for neg position (can't overlap too much; also don't get too close between slices [->inflate])
                for b=1,1000 do    
                     local in2idx = pe.samplePatch(oW, oH, oD, input2)
                     local inter
                     if pe.isVol then
-                        --local reldist = boxCenterDistance(in1idx, in2idx) / (opt.patchSize/2)
+                        --local reldist = boxCenterDistance(in1idx, in2idx) / opt.patchSize
                         --ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit)                        
                         local inter = boxIntersectionUnion(in1idx, in2idx) /oW/oH/oD
                         ok = (inter < maxIntersection)
                     else
-                        --local reldist = boxCenterDistance(in1idx, in2idx) / (opt.patchSize/2)
+                        --local reldist = boxCenterDistance(in1idx, in2idx) / opt.patchSize
                         --ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit)
                         local pad3d = sampleSize[2]/10/2
                         local inter = boxIntersectionUnion(boxPad(in1idx, 0, pad3d), boxPad(in2idx, 0, pad3d)) /oW/oH
                         ok = (inter < maxIntersection)
                     end    
-                    if ok then                        
-                        out2 = pe.extractPatch(input2, in2idx)
+                    if ok then                     
+                        out2, ok = extractPatch(input2, in2idx)
                         break
                     end
                 end    
-            else 
-                out2 = pe.extractPatch(input2, in1idx)
-                ok = true
+            else          
+                out2, ok = extractPatch(input2, in1idx)
             end
             
-            -- ignore invalid patches (partial registration, missing values in one patch; don't assume any default val)
-            if ok and (torch.any(torch.lt(out1,0)) or torch.any(torch.lt(out2,0))) then
-                ok = false
-            end    
+            if ok then
+                out1, ok = extractPatch(input1, in1idx)
+            end
                 
             -- ignore boring black patch pairs (they could be both similar and dissimilar)
             -- TODO: maybe uniform patches are bad, so check for std dev
@@ -151,7 +157,7 @@ local function processImagePair(dataset, path, nSamples, traintime)
         end        
     end
 
-   return output
+    return output
 end
 
 --------------------------------------------------------------------------------
@@ -170,7 +176,7 @@ local testHook = function(self, path)
     --TODO: not that this uses same constraints on sampling, ie. no 'nearly positives'!
 
     local rngState = torch.getRNGState()
-    torch.manualSeed(hashstate:hash(path))
+    torch.manualSeed(opt.seed-1 + hashstate:hash(path))
     local out = processImagePair(self, path, opt.numTestSPatches, false)  
     torch.setRNGState(rngState)
     return out

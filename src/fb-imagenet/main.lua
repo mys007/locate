@@ -92,5 +92,3 @@ elseif opt.t then
     test(true)
 end
 
-
-

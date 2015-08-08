@@ -116,7 +116,7 @@ void transformVolume(float axis1, float axis2, float axis3, float angle, float s
 	if (!tensorToImage(src, srcimg))
 		return;
 	
-	//Do transform. Input size = result size
+	//Do transform. Input size = result size. Note: this is really slow but no way around it.
 	ResampleImageFilterT::Pointer imageResampleFilter = ResampleImageFilterT::New();
 	imageResampleFilter->SetInput(srcimg);
     imageResampleFilter->SetSize(srcimg->GetLargestPossibleRegion().GetSize());

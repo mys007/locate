@@ -18,8 +18,6 @@ local labels = torch.CudaTensor()
 
 local testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
 
-local dispatcherRing = DispatcherRing(math.max(1,opt.nDonkeys))
-
 
 -- TODO: the real test-case will be given patch1 and image2, compute feats full-conv over image2 and output map? need to implement overfeat-like shifts or upsampling? or are they fine just with patch-patch similarity?
 
@@ -27,6 +25,12 @@ local dispatcherRing = DispatcherRing(math.max(1,opt.nDonkeys))
 -------------------------------------------------------------------------------------------------------------
 function test(isTest)
     model:evaluate()
+    donkeys:specific(true)
+    
+    -- set a well-defined rng state for controlled testing    
+    torch.manualSeed(opt.seed) 
+    cutorch.manualSeed(opt.seed)
+    for id=1,opt.nDonkeys do donkeys:addjob(id, function() torch.manualSeed(opt.seed+id) end) end
 
     print("<tester> online epoch # " .. model.epoch .. ', ' .. (isTest and 'test' or 'valid') .. ' data:')
     
@@ -35,18 +39,24 @@ function test(isTest)
     if (opt.nTestSamples>0 and datasetInfo.nTest > opt.nTestSamples and isTest) then nTest = opt.nTestSamples end
         
     nIters = math.floor(nTest/testBatchSize)
-    if nTest % testBatchSize ~= 0 then print('Warning, '..(nTest % testBatchSize)/nTest..'% test examples will not be tested due to batch size.') end    
-
+    if nTest % testBatchSize ~= 0 then print('Warning, '..(nTest % testBatchSize)/nTest..'% test examples will not be tested due to batch size.') end
     iter = 0
+    
     cutorch.synchronize()
     timer:reset()
+    confusion:zero()
     loss = 0
     
+    -- threads may deliver in different order, dispatcher prevents this nondeterminism. for test, we need donkey-specific job allocation (fixing sample--seed)
+    -- [actually, due to donkeyModapairs.testHook and using no randomness in testing we don't need either here, but let's keep it for the future]
+    local dispatcherRing = DispatcherRing(math.max(1,opt.nDonkeys))
     local semaIds = dispatcherRing:getSemaphoreIds()
+    
     for i=1,nIters do
         local indexStart = (i-1) * testBatchSize + 1
         local indexEnd = (indexStart + testBatchSize - 1)
-        donkeys:addjob(
+        
+        donkeys:addjob(1+(i-1)%opt.nDonkeys,
             -- work to be done by donkey thread
             function()
                 local inputs, labels = (isTest and testLoader or trainLoader):get(indexStart, indexEnd)
@@ -66,7 +76,6 @@ function test(isTest)
 
     donkeys:synchronize()
     cutorch.synchronize()
-    
     print(confusion)
     loss = loss / nIters    
 
@@ -92,8 +101,8 @@ end
 -------------------------------------------------------------------------------------------------------------
 function testBatch(inputsCPU, labelsCPU)
 
-    xlua.progress(iter, nIters)
     iter = iter + 1
+    xlua.progress(iter, nIters)
 
     inputs:resize(inputsCPU:size()):copy(inputsCPU)
     if opt.criterion == "bsvm" or opt.criterion == "emb" then labelsCPU[torch.eq(labelsCPU,2)] = -1 end

@@ -44,7 +44,7 @@ do -- start K datathreads (donkeys)
    else -- single threaded data loading. useful for debugging
       doDonkey(opt)
       donkeys = {}
-      function donkeys:addjob(f1, f2) f2(f1()) end
+      function donkeys:addjob(f1, f2, f3) if type(f1)=='function' then f2(f1()) else f3(f2()) end end
       function donkeys:synchronize() end
       function donkeys:specific() end
    end
