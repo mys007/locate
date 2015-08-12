@@ -68,7 +68,7 @@ function createModel(opt)
                     
                     if mType=='cb' then twr:add(nn.SpatialBatchNormalization(args[1])) end
                     
-                    twr:add(opt.backend=='cudnn' and cudnn.ReLU(true) or nn.ReLU(true))
+                    twr:add(opt.backend=='cudnn' and cudnn.ReLU(mType~='cb') or nn.ReLU(mType~='cb')) --batchnorm has some issues with inplace relu
                 end
           
                 nPlanes = args[1]          
@@ -158,7 +158,7 @@ function createModel(opt)
                 
                 if mType=='cb' then model:add(nn.SpatialBatchNormalization(args[1])) end
                 
-                model:add(opt.backend=='cudnn' and cudnn.ReLU(true) or nn.ReLU(true))
+                model:add(opt.backend=='cudnn' and cudnn.ReLU(mType~='cb') or nn.ReLU(mType~='cb')) --batchnorm has some issues with inplace relu
                 nPlanes = args[1]             
                 
             elseif (mType=='p') then    --p,pooling_factor,stride(optional),pad(optional/cudnn)

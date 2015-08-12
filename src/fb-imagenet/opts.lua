@@ -63,6 +63,8 @@ function M.parse(arg)
     cmd:option('-patchDim', 2, '3D or 2D patches')
     cmd:option('-patchSampleRotMaxPercA', 0, 'whether should rotate patches by random angle (0 = disabled ..up to 1 == full angle [-pi,pi])')
     cmd:option('-patchSampleMaxScaleF', 1, 'max factor for randomly up/down-scaling patches. 1 == disabled.')
+    cmd:option('-patchSampleNegDist', 'inter', 'distance type to distinguish neg samples inter | center')
+    cmd:option('-patchSampleNegThres', 0.3, 'threshold for patchSampleNegDist, distance type specific, always relative to patch dimensions (see donkeyModapairs)')
 	--
     cmd:option('-parSharing', true, 'use weight sharing?')	
 	cmd:option('-winit', 'default', 'weight initialization   default | He')

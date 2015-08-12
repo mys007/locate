@@ -46,7 +46,7 @@ function train()
     if config.rngCuda then cutorch.setRNGState(config.rngCuda) end
     if config.rngCpu then 
         torch.setRNGState(config.rngCpu[0]) 
-        for id=1,math.min(opt.nDonkeys, #config.rngCpu) do local s = config.rngCpu[id]; donkeys:addjob(id, function() return torch.setRNGState(s) end) end
+        for id=1,math.min(opt.nDonkeys, #config.rngCpu) do local s = config.rngCpu[id]; donkeys:addjob(id, function() torch.setRNGState(s) end) end
     end
 
     -- do one epoch

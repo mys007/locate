@@ -26,14 +26,12 @@ local datapath = os.getenv('HOME')..'/datasets/IXI'
 local patchdir = os.getenv('HOME')..'/datasets/IXI/volumes'
 local modalitiesext = {'T1.t7img.gz', 'T2.t7img.gz'}
 
-local sampleSize, maxIntersection, maxBlacks
+local sampleSize, maxBlacks
 if pe.isVol then
     sampleSize = {2, opt.patchSize, opt.patchSize, opt.patchSize}
-    maxIntersection = 0.3
     maxBlacks = sampleSize[2]*sampleSize[3]*sampleSize[4]/2
 else
     sampleSize = {2, opt.patchSize, opt.patchSize}
-    maxIntersection = 0.3
     maxBlacks = sampleSize[2]*sampleSize[3]/2
 end    
 
@@ -97,20 +95,26 @@ local function processImagePair(dataset, path, nSamples, traintime)
             if not doPos then 
                 -- rejective sampling for neg position (can't overlap too much; also don't get too close between slices [->inflate])
                for b=1,1000 do    
-                    local in2idx = pe.samplePatch(oW, oH, oD, input2)
-                    local inter
-                    if pe.isVol then
-                        --local reldist = boxCenterDistance(in1idx, in2idx) / opt.patchSize
-                        --ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit)                        
-                        local inter = boxIntersectionUnion(in1idx, in2idx) /oW/oH/oD
+                   local in2idx = pe.samplePatch(oW, oH, oD, input2)
+                   
+                   if opt.patchSampleNegDist=='center' then
+                        local reldist = boxCenterDistance(in1idx, in2idx) / opt.patchSize
+                        local distLimit = opt.patchSampleNegThres
+                        ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit and reldist > 0)
+                   elseif opt.patchSampleNegDist=='inter' then
+                        local inter
+                        if pe.isVol then
+                            inter = boxIntersectionUnion(in1idx, in2idx) /oW/oH/oD
+                        else
+                            local pad3d = sampleSize[2]/10/2
+                            inter = boxIntersectionUnion(boxPad(in1idx, 0, pad3d), boxPad(in2idx, 0, pad3d)) /oW/oH                                        
+                        end
+                        local maxIntersection = opt.patchSampleNegThres
                         ok = (inter < maxIntersection)
                     else
-                        --local reldist = boxCenterDistance(in1idx, in2idx) / opt.patchSize
-                        --ok = (distLimit>0 and reldist >= distLimit) or (distLimit<0 and reldist <= -distLimit)
-                        local pad3d = sampleSize[2]/10/2
-                        local inter = boxIntersectionUnion(boxPad(in1idx, 0, pad3d), boxPad(in2idx, 0, pad3d)) /oW/oH
-                        ok = (inter < maxIntersection)
-                    end    
+                        assert(false)
+                    end
+ 
                     if ok then                     
                         out2, ok = extractPatch(input2, in2idx)
                         break
