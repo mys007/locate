@@ -52,6 +52,7 @@ Results will appear in `~/workspace/E/medipatch` by default, this can be changed
 * [Siamese net from scratch (rotation and scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150805-124204-base-lr1e2-rotsc-fixfullrot-ex/network.net) --updated 6.8.
 * [Siamese net finetuning (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam2d/20150712-205257-base-lr1e4/network.net)
 * [2-channnel net 64x64  (rotation and scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-2ch2d/20150806-191453-base-lr1e2-rotsc/network.net)
+* [2-channnel net 64x64  (rotation and scale), box-center pos-neg distance metric, pos and neg have some overlap](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-2ch2d/20150814-162410-base-lr1e2-rotsc-dCenter-1/network.net)
 
 3D
 * [Siamese net 16x16x16 (no rotation or scale)](http://imagine.enpc.fr/~simonovm/medipatch/nets/main-siam3d/20150804-022816-base-ps16-5_3p_3-lr1e2-cudnn/network.net)
