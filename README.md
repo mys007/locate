@@ -1,6 +1,7 @@
 # Dependencies
 * Torch et al (Especially cudnn v3. TODO: explicitely state rocks?)
 * ITK4.7 For preprocessing.
+* tclap for command line parsing (included in the repo)
 
 Two steps are necessary in addition:
 - install myrock: `cd src/myrock; luarocks install myrock-1.0-0.rockspec`
@@ -44,6 +45,12 @@ Before execution, `medipatch/src/fb-imagenet` needs to be the current directory.
 * 2ch-net finetuning (no rotation or scale): `CUDA_VISIBLE_DEVICES=0 qlua main.lua -backend cunn -modelName 2ch2d -runName ft-notredame-lr1e2 -nDonkeys 3 -caffeBiases true -dataset modapairs -network /home/simonovm/workspace/medipatch/szagoruyko/2ch_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true -baselineCArch c_96_7_0_0_3,p_2,c_192_5,p_2,c_256_3,fin -learningRate 1e-2 -numEpochs 300 -device 1`
 
 Results will appear in `~/workspace/E/medipatch` by default, this can be changed by the `-save` command-line parameter. You can notice that the actual structure of the network is defined by the `-baselineCArch` parameter. It's a bit cryptic but expressive and efficient, parsing is done in `modeldefs.lua`.
+
+# Similarity Metric
+A class wrapping up the extraction of the patches and the evaluation of the similarity metric using the trained networks can be found in `medipatch/src/registration/imgsimilarity`. 
+
+# Grid evaluations
+In `medipatch/src/registration/gridtest` you can find a small script to evaluate the similarity metric on a range of values. A bash file with an example of the command line arguments can be found in `medipatch/src/registration/gridtest/GridEvaluation.sh.      
 
 # Trained networks #
 2D
