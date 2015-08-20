@@ -26,51 +26,85 @@ extern "C"{
 #include "itkResampleImageFilter.h"
 #include "itkLinearInterpolateImageFunction.h"
 
+#include "tclap/CmdLine.h"
+
 typedef itk::ImageFileReader<ImageT> ImageFileReaderT;
 typedef itk::ExtractImageFilter<ImageT,ImageT> ExtractFilterT;
 
-int main ()
+int main (int argc, char *argv[])
 {
+    std::cout << "Reading parameters: " <<std::endl;
+    //DATAPATH IS HARD CODED FOR SIMPLICITY
+    //std::string 
+    //dataPath("/home/beckerbe/Multimodal/images/IXI_R/");
+    //////////////////////////////////////////////////////////////
+    TCLAP::CmdLine 
+    cmd("Evaluate the similarity metric on a grid of translations or rotations");
     
+    TCLAP::ValueArg<std::string> 
+            fixedFileArg ("f", "fixedImage", "Fixed Image", true," ", "FILE"); 
+    cmd.add(fixedFileArg);
+    
+    TCLAP::ValueArg<std::string> 
+            movingFileArg ("m", "movingImage", "Moving Image", true," ", "FILE");
+    cmd.add(movingFileArg);
+    
+    TCLAP::ValueArg<std::string> 
+            networkFileArg ("n", "network", "Network", true," ", "FILE");
+    cmd.add(networkFileArg);
+
+    TCLAP::ValueArg<std::string> 
+            outputFileArg ("o", "output", "Output", true," ", "FILE");
+    cmd.add(outputFileArg);
+     
+        TCLAP::ValueArg<char>
+        typeOfTransformationArg("t", "type", "Type of transformation(t,r)",true,'t', "CHAR");
+    cmd.add(typeOfTransformationArg);
+    
+    TCLAP::ValueArg<float>
+        rangeArg("r", "range", "Range to evaluate (-r -> r)",true,10, "FLOAT");
+    cmd.add(rangeArg);
+    
+    TCLAP::ValueArg<float>
+        stepArg("s", "step", "Step size" ,true,1, "FLOAT");
+    cmd.add(stepArg);
+    
+    TCLAP::ValueArg<int>
+        dimArg("d", "dimension", "Dimension of evaluation" ,true,1, "INT");
+    cmd.add(dimArg);
+    
+    cmd.parse(argc,argv);
     // CHANGE HERE THE IMAGES AND THE NETWORKS.
-    
-    //const char *netpath = "/home/beckerbe/Multimodal/networks/05_2Channel_6464RotScale.net";
-    const char *netpath = "/home/beckerbe/Multimodal/networks/06_2Channel6464RotScaleOverlap.net";
+    const char *netpath =  (networkFileArg.getValue()).c_str();
     std::string 
-    dataPath("/home/beckerbe/Multimodal/images/IXI_R/");
-    std::string 
-    filenameFixed ("R_IXI002-Guys-0828-T1.nii.gz");
+        filenameFixed (fixedFileArg.getValue());
     std::string
-    filenameMoving("R_IXI002-Guys-0828-T2.nii.gz");
-       
+        filenameMoving(movingFileArg.getValue());
     
-    // TODO: Can we get the patchsize directly from the network??
+    float range     = rangeArg.getValue();
+    float step      = stepArg.getValue();
+    char transfType = typeOfTransformationArg.getValue();
+    int transfDim   = dimArg.getValue();
+    
+    std::ofstream outputStream;
+    std::string outputFile(outputFileArg.getValue());
+    
+    outputStream.open(outputFile.c_str(),std::ios::trunc);
+    std::cout << outputFile << std::endl;
+   
+     // TODO: Can we get the patchsize directly from the network??
     ImageT::SizeType  patchSize;
     patchSize[0] = 64;
     patchSize[1] = 64;
     patchSize[2] = 1;
+        
     // THIS IS USED TO DEFINE THE GRID USED FOR THE EVALUATION
     // OF THE METRIC
     std::vector<int> gridStep(3,0);
     gridStep[0] = 32;
     gridStep[1] = 32;
     gridStep[2] = 16;
-    
-    // CONFIGURE HERE THE EVALUATION.
-    int range = 30;
-    int step  = 1;
-    // 't' for translation 'r' for rotation
-    char transfType = 't';
-    int  transfDim = 2;
-    std::ofstream outputStream;
-    std::string  outputFile;
-    std::stringstream dimStream;
-    dimStream << transfDim;
-    outputFile = "/home/beckerbe/Multimodal/results/" + filenameFixed +
-                   "_" + transfType +"_" + dimStream.str() +  ".txt";
-    
-    outputStream.open(outputFile.c_str(),std::ios::trunc);
-    std::cout << outputFile << std::endl;
+   
     
     std::cout << "Reading images " << std::endl ;
     
@@ -78,7 +112,7 @@ int main ()
        
     ImageFileReaderT::Pointer 
     imageFileReaderFixed = ImageFileReaderT::New();
-    imageFileReaderFixed->SetFileName(dataPath+filenameFixed);
+    imageFileReaderFixed->SetFileName(filenameFixed);
     fixedImage = imageFileReaderFixed->GetOutput();
     fixedImage->Update();
        
@@ -87,7 +121,7 @@ int main ()
     
     ImageFileReaderT::Pointer 
            imageFileReaderMoving = ImageFileReaderT::New();
-    imageFileReaderMoving->SetFileName(dataPath+filenameMoving);
+    imageFileReaderMoving->SetFileName(filenameMoving);
     movingImage = imageFileReaderMoving->GetOutput();
     movingImage->Update();
 

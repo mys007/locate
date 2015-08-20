@@ -16,7 +16,9 @@ include_directories (
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${LUA_INCLUDE_DIR}
+    ${MEDIPATCH_DIR}/src/external/
     ${MEDIPATCH_DIR}src/registration/imgsimilarity/
+
     
 )
 
