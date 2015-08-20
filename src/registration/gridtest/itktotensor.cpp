@@ -65,16 +65,11 @@ bool pairOfImagesToTensor(ImageT::Pointer image1, ImageT::Pointer image2,
     patch = extractFilter->GetOutput();
     patch->Update();    
     
-    // Copy first patch to the first block of memory
-    memcpy(THFloatTensor_data(tensor) +
-           (iPatch * patchSize[0] * patchSize[1] * 2),
-           patch->GetBufferPointer(),
-           patchSize[0] * patchSize[1] *sizeof(float));
-   
+    
      ImageT::IndexType patchStart2;
      
      patchStart2 = patchStart;
-     patchStart2[1] = patchStart[1]+ iPatch - 5;  
+     patchStart2[1] = patchStart[1]+ (iPatch*1 - 5);  
      ImageT::RegionType  patchRegion2(patchStart2,patchSize);
      ExtractFilterT::Pointer 
                 extractFilter2 = ExtractFilterT::New();
@@ -83,6 +78,14 @@ bool pairOfImagesToTensor(ImageT::Pointer image1, ImageT::Pointer image2,
      extractFilter2->SetExtractionRegion(patchRegion2);
      patch2 = extractFilter2->GetOutput();
      patch2->Update(); 
+   
+    // Copy first patch to the first block of memory
+    memcpy(THFloatTensor_data(tensor) +
+           (iPatch * patchSize[0] * patchSize[1] * 2),
+           patch->GetBufferPointer(),
+           patchSize[0] * patchSize[1] *sizeof(float));
+   
+
      // Copy second patch to the second block of memory
      memcpy(THFloatTensor_data(tensor) + 
             (patchSize[0] * patchSize[1]) +
