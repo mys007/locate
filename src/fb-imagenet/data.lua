@@ -56,6 +56,7 @@ donkeys:addjob(function() return trainLoader.classes end, function(c) datasetInf
 donkeys:addjob(function() return trainLoader.sampleSize end, function(c) datasetInfo.sampleSize = c end)
 donkeys:addjob(function() return trainLoader:sizeTrain() end, function(c) datasetInfo.nTrain = c * opt.numTSPatches end)
 donkeys:addjob(function() return trainLoader:sizeTest() end, function(c) datasetInfo.nValid = c end)
+donkeys:addjob(function() return trainLoader.meanstd end, function(c) datasetInfo.meanstd = c end)
 donkeys:synchronize()
 datasetInfo.nClasses = #datasetInfo.classes
 assert(datasetInfo.nClasses, "Failed to get nClasses")

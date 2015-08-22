@@ -29,10 +29,10 @@ local modalitiesext = {'T1.t7img.gz', 'T2.t7img.gz'}
 local sampleSize, maxBlacks
 if pe.isVol then
     sampleSize = {2, opt.patchSize, opt.patchSize, opt.patchSize}
-    maxBlacks = sampleSize[2]*sampleSize[3]*sampleSize[4]/2
+    maxBlacks = sampleSize[2]*sampleSize[3]*sampleSize[4]*opt.patchSampleMaxBlacks
 else
     sampleSize = {2, opt.patchSize, opt.patchSize}
-    maxBlacks = sampleSize[2]*sampleSize[3]/2
+    maxBlacks = sampleSize[2]*sampleSize[3]*opt.patchSampleMaxBlacks
 end    
 
 -- channel-wise mean and std. Calculate or load them from disk later in the script.
@@ -130,9 +130,12 @@ local function processImagePair(dataset, path, nSamples, traintime)
                 
             -- ignore boring black patch pairs (they could be both similar and dissimilar)
             -- TODO: maybe uniform patches are bad, so check for std dev
-            if ok and torch.lt(out1,1e-6):sum()>maxBlacks and torch.lt(out2,1e-6):sum()>maxBlacks then
-                ok = false
-            end  
+            if ok then
+                local o1b, o2b = torch.lt(out1,1e-6):sum()>maxBlacks, torch.lt(out2,1e-6):sum()>maxBlacks
+                if (opt.patchSampleBlackPairs and o1b and o2b) or (not opt.patchSampleBlackPairs and (o1b or o2b)) then
+                    ok = false
+                end
+            end
             
             if ok then break end
         end
@@ -246,6 +249,7 @@ collectgarbage()
 -- Estimate the per-channel mean/std (so that the loaders can normalize appropriately)
 if paths.filep(meanstdCache) then
    local meanstd = torch.load(meanstdCache)
+   trainLoader.meanstd = meanstd
    mean = meanstd.mean
    std = meanstd.std
    print('Loaded mean and std from cache.')
@@ -282,6 +286,7 @@ else
    cache.mean = mean
    cache.std = std
    torch.save(meanstdCache, cache)
+   trainLoader.meanstd = cache
    print('Time to estimate:', tm:time().real)
    
     do -- just check if mean/std look good now

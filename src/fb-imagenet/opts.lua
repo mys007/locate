@@ -65,6 +65,8 @@ function M.parse(arg)
     cmd:option('-patchSampleMaxScaleF', 1, 'max factor for randomly up/down-scaling patches. 1 == disabled.')
     cmd:option('-patchSampleNegDist', 'inter', 'distance type to distinguish neg samples inter | center')
     cmd:option('-patchSampleNegThres', 0.3, 'threshold for patchSampleNegDist, distance type specific, always relative to patch dimensions (see donkeyModapairs)')
+    cmd:option('-patchSampleMaxBlacks', 0.5, '% of black pixels/voxels to skip a patch (pair)')
+    cmd:option('-patchSampleBlackPairs', true, 'whether both samples from a pair or any of them being black leads to being skipped')
 	--
     cmd:option('-parSharing', true, 'use weight sharing?')	
 	cmd:option('-winit', 'default', 'weight initialization   default | He')

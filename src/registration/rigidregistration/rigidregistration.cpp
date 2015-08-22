@@ -64,21 +64,7 @@ int main (int argc, char *argv[])
     std::string
         filenameMoving(movingFileArg.getValue());
     
-    
-     // TODO: Can we get the patchsize directly from the network??
-    ImageT::SizeType  patchSize;
-    patchSize[0] = 64;
-    patchSize[1] = 64;
-    patchSize[2] = 1;
-        
-    // THIS IS USED TO DEFINE THE GRID USED FOR THE EVALUATION
-    // OF THE METRIC
-    std::vector<int> gridStep(3,0);
-    gridStep[0] = 64;
-    gridStep[1] = 64;
-    gridStep[2] = 64;
    
-    
     std::cout << "Reading images " << std::endl ;
     
     ImageT::Pointer fixedImage = ImageT::New();
@@ -101,10 +87,24 @@ int main (int argc, char *argv[])
     ImageT::SizeType  imageSize;
     imageSize = fixedImage->GetLargestPossibleRegion().GetSize();
     
+    // Here we setup the similarity metric: 
+    NnSimilarityMetric similarityMetric;
+    similarityMetric.setLuaState();    
+    similarityMetric.setNetwork(netpath);
+    ImageT::SizeType patchSize = similarityMetric.getPatchSize();    
+    
     
     // Here we define the points where the similarity metric is evaluated. The
     // patches are extracted setting as center each point of the evaluationGrid
     // vector
+    
+        
+    // THIS IS USED TO DEFINE THE GRID USED FOR THE EVALUATION
+    // OF THE METRIC
+    std::vector<int> gridStep(3,0);
+    gridStep[0] = 64;
+    gridStep[1] = 64;
+    gridStep[2] = 64;    
     
     std::vector<ImageT::IndexType> evaluationGrid;
     std::vector<int> upperGridLimits(3,0);
@@ -145,18 +145,14 @@ int main (int argc, char *argv[])
     }
     
     
-    NnSimilarityMetric similarityMetric;
-    // Here we setup the similarity metric: 
-    //ONLY INITIALIZE TENSORS AFTER SETTING UP THE GRID AND THE PATCH SIZE. THERE
+    //ONLY INITIALIZE TENSORS AFTER SETTING UP THE GRID AND LOADING THE NET. THERE
     //ARE NO DEFAULTS!!
 
-    similarityMetric.setLuaState();
-    similarityMetric.setPatchSize(patchSize);
     similarityMetric.setGrid(evaluationGrid);
     similarityMetric.setFixedImage(fixedImage);
     similarityMetric.initializeTensors();
-    similarityMetric.setNetwork(netpath);
     //
+    
     std::vector<double> optimisationLowerBounds(6);
     std::vector<double> optimisationUpperBounds(6);
     std::vector<double> optimisationStepSize(6);

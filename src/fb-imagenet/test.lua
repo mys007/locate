@@ -134,7 +134,7 @@ function testBatch(inputsCPU, labelsCPU)
             confusion.mat[it][ip] = confusion.mat[it][ip] + 1
         end
     else        
-        confusion:add(outputs, labelsCPU)
+        confusion:batchAdd(outputs, labelsCPU)
     end   
     
     loss = loss + err

@@ -4,7 +4,7 @@ SET(CMAKE_BUILD_TYPE Release)
 #SET(CMAKE_BUILD_TYPE Debug)
 project (RigidRegistration)
  
-SET(MEDIPATCH_DIR /home/beckerbe/Multimodal/medipatch/)
+SET(MEDIPATCH_DIR $ENV{HOME}/Multimodal/medipatch/)
 SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR})
 find_package(Lua REQUIRED)
 FIND_PACKAGE(Torch REQUIRED)

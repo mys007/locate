@@ -35,15 +35,12 @@ int main(int argc, char ** argv)
         
     const char *netpath = "/home/beckerbe/Multimodal/networks/new_network_overlap.net";
     similarityMetric.setLuaState();
+    similarityMetric.setNetwork(netpath);
     similarityMetric.setFixedImage(fixedImage);
     similarityMetric.setMovingImage(movingImage);
     
-    ImageT::SizeType  patchSize;
-    patchSize[0] = 64;
-    patchSize[1] = 64;
-    patchSize[2] = 1;
-    ImageT::SizeType  imageSize;
-    imageSize = fixedImage->GetLargestPossibleRegion().GetSize();
+    ImageT::SizeType patchSize = similarityMetric.getPatchSize();
+    ImageT::SizeType imageSize = fixedImage->GetLargestPossibleRegion().GetSize();
     
     
     std::vector<ImageT::IndexType> evaluationGrid;
@@ -88,11 +85,9 @@ int main(int argc, char ** argv)
         z += gridStep[2];
     }
     
-    
-    similarityMetric.setPatchSize(patchSize);
+
     similarityMetric.setGrid(evaluationGrid);
     similarityMetric.initializeTensors();
-    similarityMetric.setNetwork(netpath);
     
     similarityMetric.compute();
     

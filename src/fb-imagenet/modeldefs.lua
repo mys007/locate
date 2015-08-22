@@ -12,6 +12,9 @@ function createModel(opt)
     assert(opt ~= nil)
     
     local model = nn.Sequential()
+    model.inputDim = datasetInfo.sampleSize
+    model.outputDim = (opt.criterion == "bsvm" or opt.criterion == "emb") and 1 or 2
+    model.meanstd = datasetInfo.meanstd
     local criterion   
     local expectedInput = torch.Tensor(1, unpack(datasetInfo.sampleSize)):zero()
         
@@ -83,8 +86,8 @@ function createModel(opt)
                         if (args[1] == math.floor(args[1])) then
                             twr:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
                         else
-                            local sofar = model:forward(expectedInput)
-                            twr:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))
+                            local sofarsz = model:clone():forward(expectedInput):size()
+                            twr:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofarsz[3]*args[1]-0.5), math.ceil(sofarsz[2]*args[1]-0.5)))
                         end
                     end
                 end
@@ -109,8 +112,8 @@ function createModel(opt)
                 
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
                 model:add(nn.View(-1):setNumInputDims(#datasetInfo.sampleSize))
-                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:forward(expectedInput):nElement()             
-                local lin = nn.Linear(n, 1)
+                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:clone():forward(expectedInput):nElement()             
+                local lin = nn.Linear(n, model.outputDim)
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end
                 model:add(lin)        
@@ -170,8 +173,8 @@ function createModel(opt)
                     if (args[1] == math.floor(args[1])) then
                         model:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
                     else
-                        local sofar = model:forward(expectedInput)
-                        model:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofar:size(3)*args[1]-0.5), math.ceil(sofar:size(2)*args[1]-0.5)))
+                        local sofarsz = model:clone():forward(expectedInput):size()
+                        model:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofarsz[3]*args[1]-0.5), math.ceil(sofarsz[2]*args[1]-0.5)))
                     end
                 end            
                 
@@ -180,8 +183,8 @@ function createModel(opt)
                                
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
                 model:add(nn.View(-1):setNumInputDims(#datasetInfo.sampleSize))
-                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:forward(expectedInput):nElement()             
-                local lin = nn.Linear(n, 1)            
+                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:clone():forward(expectedInput):nElement()             
+                local lin = nn.Linear(n, model.outputDim)            
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end
                 model:add(lin)        

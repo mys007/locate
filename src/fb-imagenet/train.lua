@@ -235,7 +235,7 @@ function trainBatch(inputsCPU, labelsCPU)
         for i,module in ipairs(model:listModules()) do
             if module.output then print(i .. ': ' .. torch.type(module) .. ' ' .. formatSizeStr(module.output)) end
         end  
-    end       
+    end
 
     --confusion
     outputs = outputs:float()
@@ -246,8 +246,8 @@ function trainBatch(inputsCPU, labelsCPU)
             local it, ip = (labelsCPU[i]==1 and 1 or 2), (isPos and 1 or 2)
             confusion.mat[it][ip] = confusion.mat[it][ip] + 1
         end
-    else        
-        confusion:add(outputs, labelsCPU)
+    else
+        confusion:batchAdd(outputs, labelsCPU)
     end
     
     dataTimer:reset()

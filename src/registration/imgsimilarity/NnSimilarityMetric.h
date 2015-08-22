@@ -17,7 +17,7 @@ class NnSimilarityMetric : public SimilarityMetric
 public:
     void compute();
     void setNetwork(const char * netpath);
-    void setPatchSize(ImageT::SizeType patchSize);
+    ImageT::SizeType getPatchSize();
     void setLuaState();
     void setGrid(std::vector<ImageT::IndexType> grid );
     void initializeTensors();

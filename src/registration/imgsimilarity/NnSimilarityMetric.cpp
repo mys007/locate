@@ -91,20 +91,31 @@ void NnSimilarityMetric::setNetwork(const char * netpath) {
         lua_close(m_luaState);
     }
 
-
-
+    lua_getglobal(m_luaState, "getInputPatchSize");
+    if (lua_pcall(m_luaState, 0, 3, 0) != 0) {
+        std::cerr << "Error calling getInputPatchSize: " << lua_tostring(m_luaState, -1) << std::endl;
+        lua_close(m_luaState);
+    }
+    for (int i=0; i<3; i++) {
+		if (!lua_isnumber(m_luaState, -1)) {
+    	    std::cerr << "Error calling getInputPatchSize: must return 3 numbers" << std::endl;
+    	    lua_close(m_luaState);
+    	}
+    	m_patchSize[i]= lua_tonumber(m_luaState, -1);
+	    lua_pop(m_luaState, 1);
+	}
 }
 
-void NnSimilarityMetric::setPatchSize(ImageT::SizeType patchSize) {
-    m_patchSize = patchSize;
-
+ImageT::SizeType NnSimilarityMetric::getPatchSize() {
+    return m_patchSize;
+    
 }
 
 void NnSimilarityMetric::setLuaState() {
    
     m_luaState = luaL_newstate();
     luaL_openlibs(m_luaState);
-    if (luaL_dofile(m_luaState, "../script.lua"))
+    if (luaL_dofile(m_luaState, "../../imgsimilarity/script.lua"))
     {
         std::cerr << "Could not load file: " << lua_tostring(m_luaState, -1) << std::endl;
         lua_close(m_luaState);

@@ -92,20 +92,7 @@ int main (int argc, char *argv[])
     outputStream.open(outputFile.c_str(),std::ios::trunc);
     std::cout << outputFile << std::endl;
    
-     // TODO: Can we get the patchsize directly from the network??
-    ImageT::SizeType  patchSize;
-    patchSize[0] = 64;
-    patchSize[1] = 64;
-    patchSize[2] = 1;
-        
-    // THIS IS USED TO DEFINE THE GRID USED FOR THE EVALUATION
-    // OF THE METRIC
-    std::vector<int> gridStep(3,0);
-    gridStep[0] = 32;
-    gridStep[1] = 32;
-    gridStep[2] = 16;
-   
-    
+ 
     std::cout << "Reading images " << std::endl ;
     
     ImageT::Pointer fixedImage = ImageT::New();
@@ -128,10 +115,24 @@ int main (int argc, char *argv[])
     ImageT::SizeType  imageSize;
     imageSize = fixedImage->GetLargestPossibleRegion().GetSize();
     
+
+    // Here we setup the similarity metric: 
+    NnSimilarityMetric similarityMetric;
+    similarityMetric.setLuaState();    
+    similarityMetric.setNetwork(netpath);
+    ImageT::SizeType patchSize = similarityMetric.getPatchSize();
+    
     
     // Here we define the points where the similarity metric is evaluated. The
     // patches are extracted setting as center each point of the evaluationGrid
     // vector
+
+	// THIS IS USED TO DEFINE THE GRID USED FOR THE EVALUATION
+    // OF THE METRIC
+    std::vector<int> gridStep(3,0);
+    gridStep[0] = 32;
+    gridStep[1] = 32;
+    gridStep[2] = 16;    
     
     std::vector<ImageT::IndexType> evaluationGrid;
     std::vector<int> upperGridLimits(3,0);
@@ -169,22 +170,14 @@ int main (int argc, char *argv[])
             y += gridStep[1];
         }
         z += gridStep[2];
-    }
-    
-    
-    NnSimilarityMetric similarityMetric;
-    
+    } 
 
-    // Here we setup the similarity metric: 
-    //ONLY INITIALIZE TENSORS AFTER SETTING UP THE GRID AND THE PATCH SIZE. THERE
+    //ONLY INITIALIZE TENSORS AFTER SETTING UP THE GRID AND LOADING THE NET. THERE
     //ARE NO DEFAULTS!!
 
-    similarityMetric.setLuaState();
-    similarityMetric.setPatchSize(patchSize);
     similarityMetric.setGrid(evaluationGrid);
     similarityMetric.setFixedImage(fixedImage);
     similarityMetric.initializeTensors();
-    similarityMetric.setNetwork(netpath);
     //
 
     
@@ -224,8 +217,8 @@ int main (int argc, char *argv[])
     {
         
         translation[0] = 0;
-	translation[1] = 0;
-	translation[2] = 0;
+	    translation[1] = 0;
+	    translation[2] = 0;
         std::vector <double> rotation(3,0);
         
         if (transfType == 't')
@@ -241,7 +234,7 @@ int main (int argc, char *argv[])
             std::cerr << "invalid transformation type" << std::endl;
         }
         
-	eulerTransform->SetTranslation(translation);
+	    eulerTransform->SetTranslation(translation);
         eulerTransform->SetRotation(rotation[0],rotation[1],rotation[2]);
         
         resampler->SetTransform(eulerTransform);
