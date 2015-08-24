@@ -102,9 +102,9 @@ int main (int argc, char *argv[])
     // THIS IS USED TO DEFINE THE GRID USED FOR THE EVALUATION
     // OF THE METRIC
     std::vector<int> gridStep(3,0);
-    gridStep[0] = 64;
-    gridStep[1] = 64;
-    gridStep[2] = 64;    
+    gridStep[0] = 32;
+    gridStep[1] = 32;
+    gridStep[2] = 16;    
     
     std::vector<ImageT::IndexType> evaluationGrid;
     std::vector<int> upperGridLimits(3,0);

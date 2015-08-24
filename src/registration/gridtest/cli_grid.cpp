@@ -234,7 +234,7 @@ int main (int argc, char *argv[])
             std::cerr << "invalid transformation type" << std::endl;
         }
         
-	    eulerTransform->SetTranslation(translation);
+	eulerTransform->SetTranslation(translation);
         eulerTransform->SetRotation(rotation[0],rotation[1],rotation[2]);
         
         resampler->SetTransform(eulerTransform);

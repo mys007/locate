@@ -42,12 +42,12 @@ double nloptSimilarityFunction( const std::vector<double> &transformationVector,
     
     eulerTransform->SetCenter(centerWorldSpace);
     
-    resampler->SetSize(imgSize);
+    //resampler->SetSize(imgSize);
     resampler->SetInput(movingImage);
     resampler->SetTransform(eulerTransform);
     resampler->SetInterpolator(interpolator);
+    resampler->UseReferenceImageOn();
     resampler->SetReferenceImage(fixedImage);
-    resampler->SetDefaultPixelValue(0);
     movedImage = resampler->GetOutput();
     movedImage->Update();
     
