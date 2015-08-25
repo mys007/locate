@@ -146,10 +146,14 @@ int main(int argc, char *argv[]) {
     
     std::cout << "Optimal transformation is: " ;
     for (int i=0; i<6;i++)
+        std::cout << -transformationArg.getValue()[i] << " ";
+    std::cout << std::endl;
+    
+    std::cout << "Obtained transformation is: " ;
+    for (int i=0; i<6;i++)
         std::cout << transformationVector[i] << " ";
     
     std::cout << std::endl;
-    
 
     return (0);
 }
