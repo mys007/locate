@@ -29,7 +29,7 @@ set (SOURCES
     
     ${MEDIPATCH_DIR}src/registration/imgsimilarity/SimilarityMetric.cpp
     ${MEDIPATCH_DIR}src/registration/imgsimilarity/NnSimilarityMetric.cpp
-
+    ${MEDIPATCH_DIR}src/registration/imgsimilarity/MutualInfoSimilarityMetric.cpp
 )
 
 

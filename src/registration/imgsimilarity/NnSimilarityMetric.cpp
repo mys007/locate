@@ -134,3 +134,46 @@ void NnSimilarityMetric::initializeTensors() {
             m_patchSize[0], m_patchSize[1]);
     m_similarityTensor = THFloatTensor_newWithSize1d(m_nbPatches);
 }
+
+void NnSimilarityMetric::setUniformGrid(std::vector<int> gridStep)
+{
+        ImageT::SizeType imageSize;
+        imageSize = m_fixedImage->GetLargestPossibleRegion().GetSize();
+
+        std::vector<ImageT::IndexType> evaluationGrid;
+        std::vector<int> upperGridLimits(3, 0);
+        std::vector<int> lowerGridLimits(3, 0);
+
+        upperGridLimits[0] = imageSize[0] - m_patchSize[0];
+        upperGridLimits[1] = imageSize[1] - m_patchSize[1];
+        upperGridLimits[2] = imageSize[2] - m_patchSize[1];
+
+        lowerGridLimits[0] = 0;
+        lowerGridLimits[1] = 0;
+        lowerGridLimits[2] = 0;
+
+
+        int x, y, z;
+
+        z = lowerGridLimits[2];
+
+        while (z <= upperGridLimits[2]) {
+            y = lowerGridLimits[1];
+            while (y <= upperGridLimits[1]) {
+                x = lowerGridLimits[0];
+                while (x <= upperGridLimits[0]) {
+                    ImageT::IndexType currentGridPoint;
+                    currentGridPoint[0] = x;
+                    currentGridPoint[1] = y;
+                    currentGridPoint[2] = z;
+                    evaluationGrid.push_back(currentGridPoint);
+                    x += gridStep[0];
+
+                }
+                y += gridStep[1];
+            }
+            z += gridStep[2];
+        }
+
+    this->setGrid(evaluationGrid);
+}

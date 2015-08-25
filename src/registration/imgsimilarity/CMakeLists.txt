@@ -20,7 +20,7 @@ set (SOURCES
 )
 
 #
-add_library(Similarity SimilarityMetric.cpp NnSimilarityMetric.cpp  )
+add_library(Similarity SimilarityMetric.cpp NnSimilarityMetric.cpp  MutualInfoSimilarityMetric.cpp)
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_link_libraries (Similarity ${ITK_LIBRARIES}

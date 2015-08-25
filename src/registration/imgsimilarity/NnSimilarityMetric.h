@@ -21,7 +21,7 @@ public:
     void setLuaState();
     void setGrid(std::vector<ImageT::IndexType> grid );
     void initializeTensors();
-
+    void setUniformGrid(std::vector<int> gridSpacing);
 private:
     int m_nbPatches;
     std::vector<ImageT::IndexType> m_grid;
