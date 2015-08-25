@@ -55,7 +55,6 @@ int main (int argc, char *argv[])
             networkFileArg ("n", "network", "Network", true," ", "FILE");
     cmd.add(networkFileArg);
 
-        
     cmd.parse(argc,argv);
     // CHANGE HERE THE IMAGES AND THE NETWORKS.
     const char *netpath =  (networkFileArg.getValue()).c_str();
