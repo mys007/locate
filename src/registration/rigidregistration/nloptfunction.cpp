@@ -39,7 +39,6 @@ double nloptSimilarityFunction( const std::vector<double> &transformationVector,
     for (int iDim=0; iDim< 3; iDim++)
        centerImageSpace[iDim] =  imgSize[iDim]/2;
     fixedImage->TransformIndexToPhysicalPoint(centerImageSpace,centerWorldSpace);
-    
     eulerTransform->SetCenter(centerWorldSpace);
     
     //resampler->SetSize(imgSize);
