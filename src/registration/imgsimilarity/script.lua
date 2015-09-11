@@ -4,7 +4,7 @@ package.path = os.getenv('HOME')..'/Multimodal/medipatch/src/myrock/?.lua;' .. p
 require('myrock')
 require('SpatialMaxPoolingCaffe')
 
-local model, inputGpu
+local model, inputGpu, gradInGpu
 
 function loadNetwork(path)
 	cutorch.setDevice(1)
@@ -38,7 +38,7 @@ function getInputPatchSize()
 	end
 end
 
-function forward(input, output)
+function forward(input, output, grad)
 	inputGpu = inputGpu or input:cuda()
 	inputGpu:copy(input)
 		
@@ -51,10 +51,28 @@ function forward(input, output)
 	xpcall(function() model:forward(inputGpu) end, function(err) print(debug.traceback(err)) end)
 	
 	if model.outputDim == 1 then 
+	    output:resize(model.output:size())
 		output:copy(model.output)
 	else
+	    output:resize(model.output:select(2,1):size())
 		output:copy(model.output:select(2,1))
 	end	
+	
+	if grad then
+	    gradInGpu = gradInGpu or torch.CudaTensor()
+	    gradInGpu:resizeAs(model.output)
+        if model.outputDim == 1 then 
+            gradInGpu:fill(1)
+        else
+            gradInGpu:fill(0)
+            gradInGpu:select(2,1):fill(1)
+        end 
+        
+        xpcall(function() model:updateGradInput(inputGpu, gradInGpu) end, function(err) print(debug.traceback(err)) end)
+        
+        grad:resize(model.gradInput:size())
+        grad:copy(model.gradInput)
+	end
 	
 	--[[for i=1,input:size(1) do
 		for j=1,2 do
@@ -65,3 +83,14 @@ function forward(input, output)
 	boom()--]]
 end
 
+
+
+
+--test
+--[[loadNetwork('/home/simonovm/workspace/E/medipatch/main-2ch2d/20150820-184853-base-lr1e2-rotsc-dCenter1e-4/network.net')
+getInputPatchSize()
+local ii = torch.Tensor(10,2,64,64):fill(0)
+local oo = torch.Tensor()
+local gg = torch.Tensor()
+forward(ii, oo, gg)
+print(gg[1])--]]
