@@ -21,7 +21,7 @@ if patchExtraction.isVol then
     -- Extracts a 3D patch from volume.
     -- Optionally performs randomized rotation and scaling (normal d). Surrounding data need to be available, doesn't do any zero-padding.
     -- Note that trilinear (?) interpolation introduces smoothing artifacts 
-    function patchExtraction.extractPatch(input, indices)
+    function patchExtraction.extractPatch(input, indices, transfpar)
         if opt.patchSampleRotMaxPercA > 0 or opt.patchSampleMaxScaleF > 1 then 
             local patchCenter = {}
             for i=1,#indices do patchCenter[i] = (indices[i][2] + indices[i][1])/2 end
@@ -33,13 +33,18 @@ if patchExtraction.isVol then
             local ok = false
             local alpha, axis, sc = 0, {1,0,0}, 1
             for a=1,20 do
-                if opt.patchSampleRotMaxPercA > 0 then
-                    alpha = torch.uniform(-math.pi, math.pi) * opt.patchSampleRotMaxPercA
-                    axis = {torch.normal(0,1), torch.normal(0,1), torch.normal(0,1)}
-                end
-                if opt.patchSampleMaxScaleF > 1 then
-                    sc = torch.normal(1, (opt.patchSampleMaxScaleF-1)/2) --in [1/f;f] with 95% prob
-                    sc = math.max(math.min(sc, opt.patchSampleMaxScaleF), 1/opt.patchSampleMaxScaleF)
+                if transfpar then
+                    alpha, axis, sc = unpack(transfpar)
+                else
+                    if opt.patchSampleRotMaxPercA > 0 then
+                        alpha = torch.uniform(-math.pi, math.pi) * opt.patchSampleRotMaxPercA
+                        axis = {torch.normal(0,1), torch.normal(0,1), torch.normal(0,1)}
+                    end
+                    if opt.patchSampleMaxScaleF > 1 then
+                        sc = torch.normal(1, (opt.patchSampleMaxScaleF-1)/2) --in [1/f;f] with 95% prob
+                        sc = math.max(math.min(sc, opt.patchSampleMaxScaleF), 1/opt.patchSampleMaxScaleF)
+                    end
+                    transfpar = {alpha, axis, sc}
                 end
       
                 --compute inverse transformation of a axis-aligned box centered at (0,0,0) with vertices at points like (1,1,1) 
@@ -79,7 +84,7 @@ if patchExtraction.isVol then
             --image.display{image=patchEx, zoom=4, legend='Fin', padding=1, nrow=math.ceil(math.sqrt(patchEx:size(1)))}  
             --print(alpha, sc, axis[1], axis[2], axis[3])          
                
-            return patchEx
+            return patchEx, transfpar
         
         else
             return input[indices]:squeeze()
@@ -119,7 +124,7 @@ else
     -- Extracts a 2D patch from volume.
     -- Optionally performs randomized rotation (uniform d) and scaling (normal d). Surrounding data need to be available, doesn't do any zero-padding.
     -- Note that bilinear interpolation introduces smoothing artifacts 
-    function patchExtraction.extractPatch(input, indices)
+    function patchExtraction.extractPatch(input, indices, transfpar)
         if opt.patchSampleRotMaxPercA > 0 or opt.patchSampleMaxScaleF > 1 then 
             -- determine available space around patch
                 --note: the inverse transformation idea used at teh 3D version is much nicer:)
@@ -134,12 +139,17 @@ else
             local ok = false
             local alpha, sc, requiredPad = 0, 1, 0
             for a=1,100 do
-                alpha = torch.uniform(-math.pi, math.pi) * opt.patchSampleRotMaxPercA
-                if opt.patchSampleMaxScaleF > 1 then
-                    sc = torch.normal(1, (opt.patchSampleMaxScaleF-1)/2) --in [1/f;f] with 95% prob
-                    sc = math.max(math.min(sc, opt.patchSampleMaxScaleF), 1/opt.patchSampleMaxScaleF)
-                end     --sc has here the inverse meaning as in the 3D version:)
-                
+                if transfpar then
+                    alpha, sc = unpack(transfpar)
+                else
+                    alpha = torch.uniform(-math.pi, math.pi) * opt.patchSampleRotMaxPercA
+                    if opt.patchSampleMaxScaleF > 1 then
+                        sc = torch.normal(1, (opt.patchSampleMaxScaleF-1)/2) --in [1/f;f] with 95% prob
+                        sc = math.max(math.min(sc, opt.patchSampleMaxScaleF), 1/opt.patchSampleMaxScaleF)
+                    end     --sc has here the inverse meaning as in the 3D version:)
+                    transfpar = {alpha, sc}
+                end            
+
                 -- norm distance of box corner point to rot center (not tight, but ok)
                 local rotFactor = math.max(math.abs(math.cos(alpha-math.pi/4)), math.abs(math.sin(alpha-math.pi/4))) / math.cos(math.pi/4)          
                 requiredPad = math.ceil( opt.patchSize/2 * (sc*rotFactor - 1) )
@@ -165,7 +175,7 @@ else
                 patchEx = image.scale(patchEx, opt.patchSize, opt.patchSize, 'bilinear')
             end    
     
-            return patchEx
+            return patchEx, transfpar
         
         else
             return input[indices]:squeeze()

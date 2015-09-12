@@ -66,11 +66,12 @@ local function loadImagePair(path)
 end
 
 --------------------------------
-local function extractPatch(input, indices)
-    local out = pe.extractPatch(input, indices)
+local function extractPatch(input, indices, transfpar)
+    assert(input and indices)
+    local out, transfpar = pe.extractPatch(input, indices, transfpar)
     -- ignore invalid patches (partial registration, missing values in one patch; don't assume any default val)
     local allvalid = not torch.any(torch.lt(out,0))
-    return out, allvalid 
+    return out, allvalid, transfpar 
 end
 
 --------------------------------
@@ -91,6 +92,7 @@ local function processImagePair(dataset, path, nSamples, traintime)
                     
         for a=1,1000 do
             local in1idx = pe.samplePatch(oW, oH, oD, input1)
+            local out2transfpar = nil
             
             if not doPos then 
                 -- rejective sampling for neg position (can't overlap too much; also don't get too close between slices [->inflate])
@@ -121,11 +123,11 @@ local function processImagePair(dataset, path, nSamples, traintime)
                     end
                 end    
             else          
-                out2, ok = extractPatch(input2, in1idx)
+                out2, ok, out2transfpar = extractPatch(input2, in1idx)
             end
             
             if ok then
-                out1, ok = extractPatch(input1, in1idx)
+                out1, ok = extractPatch(input1, in1idx, opt.patchSamplePosSameTransf and out2transfpar or nil)
             end
                 
             -- ignore boring black patch pairs (they could be both similar and dissimilar)
