@@ -8,6 +8,38 @@ require 'strict'
 require 'SpatialMaxPoolingCaffe' --legacy
 if opt.backend=='cudnn' then require 'cudnn' end
 
+
+
+
+local SampleWeighter, SampleWeighter_parent = torch.class('nn.SampleWeighter', 'nn.Module')
+
+function SampleWeighter:__init()
+    SampleWeighter_parent.__init(self)
+    self.factors = torch.Tensor() --set externally
+end
+
+function SampleWeighter:updateOutput(input)
+   self.output = input
+   return self.output
+end
+
+function SampleWeighter:updateGradInput(input, gradOutput)
+    local factors = gradOutput:dim()==2 and self.factors:view(-1,1) or self.factors
+    local L1orig = gradOutput:norm(1)
+    gradOutput:cmul(factors:expandAs(gradOutput))
+    local L1new = gradOutput:norm(1)
+    gradOutput:mul(L1orig/L1new) --keep the L1 of gradient (don't fluctuate the gradient)
+    self.gradInput = gradOutput
+    return self.gradInput
+end
+
+function SampleWeighter:setFactors(factors)
+    self.factors:resize(factors:size()):copy(factors)
+end
+
+
+
+
 function createModel(opt)
     assert(opt ~= nil)
     
@@ -15,6 +47,7 @@ function createModel(opt)
     model.inputDim = datasetInfo.sampleSize
     model.outputDim = (opt.criterion == "bsvm" or opt.criterion == "emb") and 1 or 2
     model.meanstd = datasetInfo.meanstd
+    model.inputMode = opt.inputMode
     local criterion   
     local expectedInput = torch.Tensor(1, unpack(datasetInfo.sampleSize)):zero()
         
@@ -131,7 +164,7 @@ function createModel(opt)
         -- for /home/simonovm/workspace/medipatch/szagoruyko/2chdeep_notredame_nn.t7
         -- use -baselineCArch c_96_4_0_0_3,c_96_3,c_96_3,c_96_3,p_2,c_192_3,c_192_3,c_192_3,fin -network /home/simonovm/workspace/medipatch/szagoruyko/2chdeep_notredame_nn.t7 -networkLoadOpt false -networkJustAsInit true
        
-        local nPlanes = 2
+        local nPlanes = model.inputDim[1]
         
         -- stage 1 : configurable convolutional part
         for token in string.gmatch(opt.baselineCArch, "[^,]+") do
@@ -201,6 +234,10 @@ function createModel(opt)
     
     
     -- loss function:
+    if opt.sampleWeightMode ~= '' then
+        model:add(nn.SampleWeighter())
+    end
+    
     if opt.criterion == "nll" then
         model:add(nn.LogSoftMax())
         criterion = nn.ClassNLLCriterion()  --negative log-likelihood

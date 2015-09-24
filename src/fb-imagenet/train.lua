@@ -143,7 +143,9 @@ function trainBatch(inputsCPU, labelsCPU)
     timer:reset()
 
     -- transfer over to GPU
+    local extrainfo
     inputs:resize(inputsCPU:size()):copy(inputsCPU)
+    if labelsCPU:dim()>1 then extrainfo = labelsCPU:narrow(2,2,labelsCPU:size(2)-1):squeeze(); labelsCPU = labelsCPU:narrow(2,1,1):squeeze() end
     if opt.criterion == "bsvm" or opt.criterion == "emb" then labelsCPU[torch.eq(labelsCPU,2)] = -1 end
     labels:resize(labelsCPU:size()):copy(labelsCPU)
 
@@ -165,6 +167,8 @@ function trainBatch(inputsCPU, labelsCPU)
         --   learningDebugger:reset()                     
 
         if opt.batchEvalSize < 1 then
+            if opt.sampleWeightMode ~= '' then model:findModules('nn.SampleWeighter')[1]:setFactors(extrainfo) end
+            
             outputs = model:forward(inputs)
             loss = criterion:forward(outputs, labels)
             local df_do = criterion:backward(outputs, labels)
@@ -178,6 +182,8 @@ function trainBatch(inputsCPU, labelsCPU)
                 local inp = (opt.batchEvalSize == 1) and inputs[i] or inputs:sub(i, math.min(opt.batchSize, i+opt.batchEvalSize-1))
                 local lab = (opt.batchEvalSize == 1) and labels[i] or labels:sub(i, math.min(opt.batchSize, i+opt.batchEvalSize-1))
 
+                if opt.sampleWeightMode ~= '' then model:findModules('nn.SampleWeighter')[1]:setFactors(extrainfo:sub(i, math.min(opt.batchSize, i+opt.batchEvalSize-1))) end
+                
                 local output = model:forward(inp)
                 loss = loss + criterion:forward(output, lab)
                 local df_do = criterion:backward(output, lab)                        

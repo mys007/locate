@@ -69,7 +69,7 @@ function DispatcherRing:__init(nSlots)
     for i=1,nSlots do 
         -- create tensor buffers in main thread. the thread loaders will push their storages to these buffers when done loading    
         self.inputsCPU[i] = torch.FloatTensor()
-        self.labelsCPU[i] = torch.LongTensor()
+        self.labelsCPU[i] = torch.FloatTensor()
         self.slotReady[i] = false 
         -- create semaphore for blocking a donkey while his slot is still undispatched (we abuse mutex for it)
         local Threads = require 'threads'

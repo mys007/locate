@@ -339,29 +339,37 @@ function dataset:getByClass(class)
 end
 
 -- converts a table of samples (and corresponding labels) to a clean tensor
+--hacked in "extra" info (regression value,...) becomes part of scalarLabels
 local function tableToOutput(self, dataTable, scalarTable)
    local data, scalarLabels, labels
    local quantity = #scalarTable
+   local nExDim = dataTable[1].e and dataTable[1].e:size(2) or 0
+   
    local samplesPerDraw
-   if dataTable[1]:dim() == #self.sampleSize then samplesPerDraw = 1
-   else samplesPerDraw = dataTable[1]:size(1) end
-   if quantity == 1 and samplesPerDraw == 1 then
-      data = dataTable[1]
+   if dataTable[1].d:dim() == #self.sampleSize then 
+      samplesPerDraw = 1
+   else 
+      samplesPerDraw = dataTable[1].d:size(1) 
+   end
+   
+   if quantity == 1 and samplesPerDraw == 1 and nExDim==0 then
+      data = dataTable[1].d
       scalarLabels = scalarTable[1]
       labels = torch.LongTensor(#(self.classes)):fill(-1)
       labels[scalarLabels] = 1
    else
       data = torch.Tensor(quantity * samplesPerDraw, unpack(self.sampleSize))
-      scalarLabels = torch.LongTensor(quantity * samplesPerDraw)
+      scalarLabels = torch.FloatTensor(quantity * samplesPerDraw, 1+nExDim)
       labels = torch.LongTensor(quantity * samplesPerDraw, #(self.classes)):fill(-1)
       for i=1,#dataTable do
-         local idx = (i-1)*samplesPerDraw
-         data[{{idx+1,idx+samplesPerDraw}}]:copy(dataTable[i])
-         scalarLabels[{{idx+1,idx+samplesPerDraw}}]:fill(scalarTable[i])
+         local idx = (i-1)*samplesPerDraw 
+         data[{{idx+1,idx+samplesPerDraw}}]:copy(dataTable[i].d)
+         scalarLabels[{{idx+1,idx+samplesPerDraw}}]:narrow(2,1,1):fill(scalarTable[i])
+         if nExDim>0 then scalarLabels[{{idx+1,idx+samplesPerDraw}}]:narrow(2,2,nExDim):copy(dataTable[i].e) end
          labels[{{idx+1,idx+samplesPerDraw},{scalarTable[i]}}]:fill(1)
       end
    end
-   return data, scalarLabels, labels
+   return data, scalarLabels:squeeze(), labels
 end
 
 -- sampler, samples from the training set.

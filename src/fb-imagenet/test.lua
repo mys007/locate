@@ -105,6 +105,7 @@ function testBatch(inputsCPU, labelsCPU)
     xlua.progress(iter, nIters)
 
     inputs:resize(inputsCPU:size()):copy(inputsCPU)
+    if labelsCPU:dim()>1 then labelsCPU = labelsCPU:narrow(2,1,1):squeeze() end --drop extra training info 
     if opt.criterion == "bsvm" or opt.criterion == "emb" then labelsCPU[torch.eq(labelsCPU,2)] = -1 end
     labels:resize(labelsCPU:size()):copy(labelsCPU)
 
