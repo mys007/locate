@@ -107,3 +107,87 @@ function DispatcherRing:dispatch(fun)
         self.idxToDispatch = self.idxToDispatch % #self.slotReady + 1
     end
 end
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------------
+-- A table used as cache synchronized among threads under exclusive access. Tensors contained in the table are shared,
+-- tables are copied over (no way how to get a C-pointer to them:()
+local MultithreadCache = torch.class('MultithreadCache')
+
+local Ss = require 'threads/sharedserialize' --like serialize but serializes storages as pointers
+local Threads = require 'threads'
+ffi.cdef[[
+void THCharStorage_free(THCharStorage *self);
+]]
+
+-- to be called from main thread and the result to be given to constructor in each donkey
+function MultithreadCache.createSharedData(nSlots)
+    -- held so that it doesn't get gced (esp heldMem)
+    assert(not MultithreadCache.heldMutex)
+    MultithreadCache.heldMutex = Threads.Mutex()
+    MultithreadCache.heldMem = ffi.new('intptr_t[?]', 1+nSlots)
+    return {nSlots, MultithreadCache.heldMutex:id(), tonumber(ffi.cast('intptr_t', MultithreadCache.heldMem))}
+end
+
+function MultithreadCache:__init(pp)
+    self.locCache = {} --per-donkey copy of cache (but tensors within are shared)
+    self.nSlots = pp[1]
+    self.mutex = Threads.Mutex(pp[2])     
+    self.ipcPointer = ffi.cast('intptr_t*', pp[3]) --[0] = shared CharStorage, [1]..[nSlots] = needs_to_update flag
+end
+
+local function retainfree(input, retain)
+    if torch.isTensor(input) then
+        if retain then input:retain() else input:free() end
+    elseif torch.type(input) == 'table' then
+        for k,v in pairs(input) do retainfree(v, retain) end
+    end
+end
+
+function MultithreadCache:_updateCacheWhenLocked()
+    if self.ipcPointer[__threadid] > 0 then
+        assert(__threadid>0 and self.ipcPointer[0] ~= 0)
+        local tensor = torch.CharTensor()  
+        tensor:cdata().storage = ffi.cast('THCharStorage*', self.ipcPointer[0]) 
+        self.locCache = Ss.load(tensor:storage())
+        retainfree(self.locCache, true) --mark that we use the tensors too now (Ss.load doesn't do it for us)
+        tensor:cdata().storage = nil --don't free the shared storage until told so
+        self.ipcPointer[__threadid] = 0
+    end
+end
+
+function MultithreadCache:load(key)
+    if self.nSlots > 0 then
+        self.mutex:lock()
+        self:_updateCacheWhenLocked()
+        self.mutex:unlock()
+    end
+    return self.locCache[key]
+end
+
+function MultithreadCache:store(key, value)
+    if self.nSlots > 0 then
+        self.mutex:lock()
+
+        self:_updateCacheWhenLocked() --checkout pending changes before writing
+        self.locCache[key] = value
+        local buff = Ss.save(self.locCache)
+        retainfree(self.locCache, false) --undo retain() from Ss; they do it only once, we need to do it as many times there are Ss.load() calls
+
+        --replace the shared storage
+        if self.ipcPointer[0] ~= 0 then ffi.C['THCharStorage_free'](ffi.cast('THCharStorage*', self.ipcPointer[0])) end   
+        self.ipcPointer[0] = ffi.cast('intptr_t', torch.pointer(buff))
+        buff:retain() 
+        self.mutex:unlock()
+        
+        for i=1,self.nSlots do self.ipcPointer[i] = 1 end --tell others to update
+        self.ipcPointer[__threadid] = 0        
+    else
+        self.locCache[key] = value
+    end
+end

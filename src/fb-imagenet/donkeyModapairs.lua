@@ -45,8 +45,10 @@ end
 local function loadImagePair(path)
     assert(path~=nil)
     
-    if opt.nDonkeys == 0 and filecache[paths.basename(path,'t7img')] then
-        return unpack(filecache[paths.basename(path,'t7img')])
+    local entry = mtcache:load(paths.basename(path,'t7img'))
+
+    if entry then
+        return unpack(entry)
     else  
         local input1 = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'photo_crop.png')) --4 channels (alpha)
         local depthedges = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'distance_crop.pfm_edges.png'))
@@ -71,9 +73,7 @@ local function loadImagePair(path)
         end
         
         -- cache samples by name; we have small DB
-        if opt.nDonkeys == 0 then
-            filecache[paths.basename(path,'t7img')] = {input1, input2, depthedges}
-        end
+        mtcache:store(paths.basename(path,'t7img'), {input1, input2, depthedges})
         
         return input1, input2, depthedges
     end

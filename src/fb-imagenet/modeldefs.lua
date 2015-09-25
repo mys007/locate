@@ -6,38 +6,12 @@ require 'image'
 require 'myrock'
 require 'strict'
 require 'SpatialMaxPoolingCaffe' --legacy
+require 'SampleWeighter'
 if opt.backend=='cudnn' then require 'cudnn' end
 
-
-
-
-local SampleWeighter, SampleWeighter_parent = torch.class('nn.SampleWeighter', 'nn.Module')
-
-function SampleWeighter:__init()
-    SampleWeighter_parent.__init(self)
-    self.factors = torch.Tensor() --set externally
-end
-
-function SampleWeighter:updateOutput(input)
-   self.output = input
-   return self.output
-end
-
-function SampleWeighter:updateGradInput(input, gradOutput)
-    local factors = gradOutput:dim()==2 and self.factors:view(-1,1) or self.factors
-    local L1orig = gradOutput:norm(1)
-    gradOutput:cmul(factors:expandAs(gradOutput))
-    local L1new = gradOutput:norm(1)
-    gradOutput:mul(L1orig/L1new) --keep the L1 of gradient (don't fluctuate the gradient)
-    self.gradInput = gradOutput
-    return self.gradInput
-end
-
-function SampleWeighter:setFactors(factors)
-    self.factors:resize(factors:size()):copy(factors)
-end
-
-
+local SpatialMaxPooling = opt.backend=='cudnn' and cudnn.SpatialMaxPooling or nn.SpatialMaxPooling
+local SpatialConvolution = opt.backend=='cudnn' and cudnn.SpatialConvolution or nn.SpatialConvolutionMM
+local ReLU = opt.backend=='cudnn' and cudnn.ReLU or nn.ReLU
 
 
 function createModel(opt)
@@ -94,7 +68,7 @@ function createModel(opt)
                     elseif opt.patchDim==3 and opt.backend=='cudnn' then
                         conv = cudnn.VolumetricConvolution(nPlanes, args[1], args[2], args[2], args[2], args[5] or 1, args[5] or 1, args[5] or 1, args[3], args[3], args[3])
                     else
-                        conv = nn.SpatialConvolutionMM(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
+                        conv = SpatialConvolution(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
                     end    
                    
                     twr:add(conv)
@@ -104,7 +78,7 @@ function createModel(opt)
                     
                     if mType=='cb' then twr:add(nn.SpatialBatchNormalization(args[1])) end
                     
-                    twr:add(opt.backend=='cudnn' and cudnn.ReLU(mType~='cb') or nn.ReLU(mType~='cb')) --batchnorm has some issues with inplace relu
+                    twr:add(ReLU(mType~='cb')) --batchnorm has some issues with inplace relu
                 end
           
                 nPlanes = args[1]          
@@ -117,7 +91,7 @@ function createModel(opt)
                         twr:add(cudnn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1], args[3] or 0, args[3] or 0, args[3] or 0))
                     else
                         if (args[1] == math.floor(args[1])) then
-                            twr:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
+                            twr:add(SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
                         else
                             local sofarsz = model:clone():forward(expectedInput):size()
                             twr:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofarsz[3]*args[1]-0.5), math.ceil(sofarsz[2]*args[1]-0.5)))
@@ -145,7 +119,7 @@ function createModel(opt)
                 
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
                 model:add(nn.View(-1):setNumInputDims(#datasetInfo.sampleSize))
-                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:clone():forward(expectedInput):nElement()             
+                local n = opt.backend=='cudnn' and model:clone():cuda():forward(expectedInput:cuda()):nElement() or model:clone():forward(expectedInput):nElement()             
                 local lin = nn.Linear(n, model.outputDim)
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end
@@ -184,7 +158,7 @@ function createModel(opt)
                 elseif opt.patchDim==3 and opt.backend=='cudnn' then
                     conv = cudnn.VolumetricConvolution(nPlanes, args[1], args[2], args[2], args[2], args[5] or 1, args[5] or 1, args[5] or 1, args[3], args[3], args[3])
                 else
-                    conv = nn.SpatialConvolutionMM(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
+                    conv = SpatialConvolution(nPlanes, args[1], args[2], args[2], args[5] or 1, args[5] or 1, args[3])
                 end 
                                 
                 model:add(conv)
@@ -193,8 +167,8 @@ function createModel(opt)
                 if (args[7] and args[7]~=1) then conv.lrFactorB = args[7] end
                 
                 if mType=='cb' then model:add(nn.SpatialBatchNormalization(args[1])) end
-                
-                model:add(opt.backend=='cudnn' and cudnn.ReLU(mType~='cb') or nn.ReLU(mType~='cb')) --batchnorm has some issues with inplace relu
+
+                model:add(ReLU(mType~='cb')) --batchnorm has some issues with inplace relu
                 nPlanes = args[1]             
                 
             elseif (mType=='p') then    --p,pooling_factor,stride(optional),pad(optional/cudnn)
@@ -204,7 +178,7 @@ function createModel(opt)
                     model:add(cudnn.VolumetricMaxPooling(args[1], args[1], args[1], args[2] or args[1], args[2] or args[1], args[2] or args[1], args[3] or 0, args[3] or 0, args[3] or 0))
                 else
                     if (args[1] == math.floor(args[1])) then
-                        model:add(nn.SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
+                        model:add(SpatialMaxPooling(args[1], args[1], args[2] or args[1], args[2] or args[1]):ceil())
                     else
                         local sofarsz = model:clone():forward(expectedInput):size()
                         model:add(nn.SpatialAdaptiveMaxPooling(math.ceil(sofarsz[3]*args[1]-0.5), math.ceil(sofarsz[2]*args[1]-0.5)))
@@ -216,7 +190,7 @@ function createModel(opt)
                                
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
                 model:add(nn.View(-1):setNumInputDims(#datasetInfo.sampleSize))
-                local n = opt.backend=='cudnn' and model:cuda():forward(expectedInput:cuda()):nElement() or model:clone():forward(expectedInput):nElement()             
+                local n = opt.backend=='cudnn' and model:clone():cuda():forward(expectedInput:cuda()):nElement() or model:clone():forward(expectedInput):nElement()             
                 local lin = nn.Linear(n, model.outputDim)            
                 if (args[1] and args[1]~=1) then conv.lrFactorW = args[1] end
                 if (args[2] and args[2]~=1) then conv.lrFactorB = args[2] end

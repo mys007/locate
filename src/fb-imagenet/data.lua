@@ -8,6 +8,7 @@
 --
 local ffi = require 'ffi'
 local Threads = require 'threads'
+require 'util'
 
 local function doDonkey(opt)
     if opt.dataset=='imagenet' then
@@ -25,6 +26,8 @@ end
 do -- start K datathreads (donkeys)
    if opt.nDonkeys > 0 then
       local options = opt -- make an upvalue to serialize over to donkey threads
+      local mcinitdata = MultithreadCache.createSharedData(opt.nDonkeys)
+    
       donkeys = Threads(
          opt.nDonkeys,
       --   function()
@@ -32,11 +35,13 @@ do -- start K datathreads (donkeys)
        --  end,
          function(idx)
          	require 'torch'
+            require 'util';    	
             opt = options -- pass to all donkeys via upvalue
             tid = idx
             local tseed = opt.seed + idx
             torch.manualSeed(tseed)
             print(string.format('Starting donkey with id: %d seed: %d', tid, tseed))
+            mtcache = MultithreadCache(mcinitdata)
             doDonkey(opt)
             torch.manualSeed(tseed) --reseed again, don't depend on whether dataset loaded/created
          end

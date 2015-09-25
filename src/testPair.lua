@@ -5,6 +5,7 @@ require('myrock')
 require 'libmattorch'
 require 'xlua'
 require 'pl'
+require 'fb-imagenet/SampleWeighter'
 
 
 opt = lapp[[
