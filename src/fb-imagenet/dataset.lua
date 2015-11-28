@@ -333,9 +333,12 @@ end
 
 -- getByClass
 function dataset:getByClass(class)
-   local index = math.ceil(torch.uniform() * self.classListSample[class]:nElement())
-   local imgpath = ffi.string(torch.data(self.imagePath[self.classListSample[class][index]]))
-   return self:sampleHookTrain(imgpath)
+   while true do
+     local index = math.ceil(torch.uniform() * self.classListSample[class]:nElement())
+     local imgpath = ffi.string(torch.data(self.imagePath[self.classListSample[class][index]]))
+     local res = self:sampleHookTrain(imgpath)
+     if res then return res end
+   end 
 end
 
 -- converts a table of samples (and corresponding labels) to a clean tensor

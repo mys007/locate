@@ -12,6 +12,11 @@ require 'myutils'
 paths.dofile('dataset.lua')
 require 'util'
 require 'torchzlib'
+require 'lmdb'
+--package.path = "/home/simonovm/torch/extra/torch-opencv/?.lua;" .. package.path --temp workaround, no rockspec
+--local cv = dofile "/home/simonovm/torch/extra/torch-opencv/cv/init.lua"
+--cv.imgproc = dofile "/home/simonovm/torch/extra/torch-opencv/cv/imgproc/init.lua"
+
 
 -- This file contains the data-loading logic and details.
 -- It is run by each data-loader thread.
@@ -22,13 +27,14 @@ local trainCache = os.getenv('HOME')..'/datasets/cache/locate'..opt.datasetPostf
 local testCache = os.getenv('HOME')..'/datasets/cache/locate'..opt.datasetPostfix..'DonkeyModapairs.testCache.t7'
 local meanstdCache = os.getenv('HOME')..'/datasets/cache/locate'..opt.datasetPostfix..'DonkeyModapairs.meanstdCache_s'..opt.trainSplit..'_'..opt.inputMode..'.t7'
 local datapath = os.getenv('HOME')..'/datasets/Locate/patches'..opt.datasetPostfix
-local patchdir = '/media/simonovm/Slow/datasets/Locate/match_descriptors_dataset'
+local patchdir = '/media/simonovm/Slow/datasets/Locate/' .. (string.starts(opt.datasetPostfix,'gt') and opt.datasetPostfix or 'match_descriptors_dataset')
 
 local shadesrange = {4,21}
 local sampleSize = {3+3, opt.patchSize, opt.patchSize}
 if opt.inputMode=='depth' then sampleSize[1] = 3 + 1
 elseif opt.inputMode=='allshades' then sampleSize[1] = 3 + 3*(shadesrange[2]-shadesrange[1]+1)
-elseif opt.inputMode=='allshadesG' then sampleSize[1] = 3 + shadesrange[2]-shadesrange[1]+1 end
+elseif opt.inputMode=='allshadesG' then sampleSize[1] = 3 + shadesrange[2]-shadesrange[1]+1
+elseif opt.inputMode=='shadesnormG' then sampleSize[1] = 3 + 3 + shadesrange[2]-shadesrange[1]+1 end
 
 local filecache = {}
 
@@ -40,47 +46,108 @@ if not os.execute('cd ' .. datapath) then
     error(("could not chdir to '%s'"):format(opt.data))
 end
 
+local db= lmdb.env{
+    Path = datapath .. '/'..opt.trainSplit..'_'..opt.inputMode,
+    Name = 'trainDB',
+    MaxReaders = 30 
+}
+db:open()
+db:reader_check()
+
+--[[lmdb.serialize = function(object) --not working. motivation was to compress memory file, without much copying around
+   local f = torch.MemoryFile():binary()
+   f:writeObject(object)
+   local storage = f:storage()
+   f:close()
+   
+   local compressed = torch.CompressedTensor(torch.CharTensor(storage), 1)
+   
+   f = torch.MemoryFile():binary()
+   f:writeObject(compressed)
+   local storage = f:storage()
+   f:close()
+
+   return storage:string(), #storage
+end
+
+lmdb.deserialize =  function(val, sz, binary)
+    local str = ffi.string(val, sz)
+   --print(val, sz)
+    local storage = torch.CharStorage():string(str)--torch.CharStorage(sz, val)
+    --storage:retain()
+   local f = torch.MemoryFile(storage, 'r'):binary()   
+   local object = f:readObject()
+   f:close()
+   
+   local decomp = object:decompress()
+   
+   f = torch.MemoryFile(decomp:storage(), 'r'):binary()
+   local object = f:readObject()
+   f:close()   
+   return object
+end--]]
+
 -------------------------------
--- load photo and synthetic images (hack: in database, there are just filenames)
+-- load photo and synthetic images (hack: in memory-mapped database shared among processes/threads, there are just filenames in the dir)
 local function loadImagePair(path)
     assert(path~=nil)
     
-    local entry = mtcache:load(paths.basename(path,'t7img'))
-
-    if entry then
-        return unpack(entry)
-    else  
-        local input1 = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'photo_crop.png')) --4 channels (alpha)
-        local depthedges = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'distance_crop.pfm_edges.png'))
+    local timer = torch.Timer()
+    timer:reset()
+    
+    local txn = db:txn(true)
+    lmdb.verbose = false
+    local entry = txn:get(paths.basename(path,'t7img'))
+    lmdb.verbose = true
+    txn:abort()
+    
+    if entry then   
+        --return entry[1]:float()/255, entry[2]:float()/255, entry[3]:float()/255
+        return entry[1]:decompress():float()/255, entry[2]:decompress():float()/255, entry[3]:decompress():float()/255
+        --return entry[1]:decompress(), entry[2]:decompress(), entry[3]:decompress()
+    else
+        local subdir = string.starts(opt.datasetPostfix,'gt') and 'maps/cyl' or 'maps'
+        local input1 = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), subdir, 'photo_crop.png')) --4 channels (alpha)
+        local depthedges = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), subdir, 'distance_crop.pfm_edges.png'))
         local input2
         
         if opt.inputMode=='allshades' or opt.inputMode=='allshadesG' then
             local nCh = opt.inputMode=='allshades' and 3 or 1
             for i=shadesrange[1],shadesrange[2] do
-                local im = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', string.format('panorama_crop_%02d.png', i)), nCh)
+                local im = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), subdir, string.format('panorama_crop_%02d.png', i)), nCh)
                 input2 = input2 or torch.Tensor((shadesrange[2]-shadesrange[1]+1)*nCh,im:size(im:dim()-1),im:size(im:dim()))
                 input2:narrow(1, nCh*(i-shadesrange[1])+1, nCh):copy(im)
             end
         elseif opt.inputMode=='camnorm' then
-            input2 = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'normalsCamera_crop.png'), 3)
+            input2 = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), subdir, 'normalsCamera_crop.png'), 3)
         elseif opt.inputMode=='depth' then
-            input2 = torch.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'distance_crop.t7img.gz')):decompress()
-            --TODO: use log domain [note that sky<0]? should sky by e.g. +40000? 
-        elseif opt.inputMode=='all' then
-            --TODO (allshadesG, camnorm, depth)
+            input2 = torch.load(paths.concat(patchdir, paths.basename(path,'t7img'), subdir, 'distance_crop.t7img.gz')):decompress()
+            --TODO: use log domain [note that sky<0]? should sky by e.g. +40000?
+        elseif opt.inputMode=='shadesnormG' then
+            local nCh = 1
+            for i=shadesrange[1],shadesrange[2] do
+                local im = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), subdir, string.format('panorama_crop_%02d.png', i)), nCh)
+                input2 = input2 or torch.Tensor(3+(shadesrange[2]-shadesrange[1]+1)*nCh,im:size(im:dim()-1),im:size(im:dim()))
+                input2:narrow(1, nCh*(i-shadesrange[1])+1, nCh):copy(im)
+            end        
+            input2:narrow(1, input2:size(1)-2, 3):copy( image.load(paths.concat(patchdir, paths.basename(path,'t7img'), subdir, 'normalsCamera_crop.png'), 3) )
         else
             assert(false)
         end
         
-        -- cache samples by name; we have small DB
-        mtcache:store(paths.basename(path,'t7img'), {input1, input2, depthedges})
+        -- cache compressed samples by name
+        local txn = db:txn()
+        --txn:put(paths.basename(path,'t7img'), {(input1*255):byte(), (input2*255):byte(), (depthedges*255):byte()}, lmdb.C.MDB_NODUPDATA)
         
+        txn:put(paths.basename(path,'t7img'), {torch.CompressedTensor((input1*255):byte(), 1), torch.CompressedTensor((input2*255):byte(), 1), torch.CompressedTensor((depthedges*255):byte(), 1)}, lmdb.C.MDB_NODUPDATA)
+ 
+        --8.3GB,~4sec
+        --txn:put(paths.basename(path,'t7img'), {torch.CompressedTensor(input1, 1), torch.CompressedTensor(input2, 1), torch.CompressedTensor(depthedges, 1)}, lmdb.C.MDB_NODUPDATA)
+        txn:commit()        
+ 
         return input1, input2, depthedges
     end
 end
-
-
-
 
 --------------------------------
 -- samples a quadratic patch (random side length, random position, random rotation; all uniform)
@@ -100,7 +167,7 @@ end
 -- Note that bilinear interpolation introduces smoothing artifacts 
 local function extractPatch(input, indices, jitter)
     local patchEx
-    
+ 
     if indices.r~=0 or (jitter and (opt.patchJitterRotMaxPercA > 0 or opt.patchJitterMaxScaleF > 1)) then
     
         local patchJitterRotMaxPercA = jitter and opt.patchJitterRotMaxPercA or 0
@@ -140,7 +207,11 @@ local function extractPatch(input, indices, jitter)
         
         -- rotate & crop center
         if (alpha ~= 0) then
-            patchEx = image.rotate(patchEx, alpha, 'bilinear')
+        
+            --local r = cv.getRotationMatrix2D{center={patchEx:size(3)/2, patchEx:size(2)/2}, angle=alpha*180/math.pi, scale=1}
+            --patchEx = cv.warpAffine{src=patchEx:transpose(1, 3):contiguous(), M=r}:transpose(1, 3)  --slow due to contiguous
+            patchEx = image.rotate(patchEx, alpha, 'bilinear') --bilinear major cause of slowdown
+
             local s = math.ceil((patchEx:size(2) - sc*patchSize)/2)
             local cidx = {s, s + math.floor(sc*patchSize)-1}
             patchEx = patchEx[{{}, cidx, cidx}]
@@ -149,8 +220,9 @@ local function extractPatch(input, indices, jitter)
         patchEx = input[indices.p]
     end
    
-    -- scale
-    patchEx = image.scale(patchEx, opt.patchSize, opt.patchSize, 'bilinear')
+    --local interp = patchEx:size(2)>opt.patchSize and cv.INTER_LINEAR or cv.CV_INTER_AREA
+    --patchEx = cv.resize{src=patchEx:transpose(1, 3):contiguous(), dsize={opt.patchSize, opt.patchSize}, interpolation=interp}:transpose(1, 3):contiguous()  --slow due to contiguous
+    patchEx = image.scale(patchEx, opt.patchSize, opt.patchSize, 'bilinear') --bilinear major cause of slowdown
        
     return patchEx, true
 end
@@ -168,33 +240,36 @@ local function writePatches(out,i)
     end
 
     local plotpath = '/home/simonovm/tmp'
-    image.save(plotpath..'/p' .. i.. '_1.png', dispAndZoom(out:sub(1,3),2))
+    image.save(plotpath..'/p' .. i.. '_1x.png', dispAndZoom(out:sub(1,3),2))
     image.save(plotpath..'/p' .. i.. '_2.png', dispAndZoom(out:sub(4,-1),2))
 end
+
+
+local tm1 = torch.Timer():stop()  ;local tm2 = torch.Timer():stop() ;local tm3 = torch.Timer():stop()
 
 
 --------------------------------
 local function processImagePair(dataset, path, nSamples, traintime)
     assert(traintime~=nil)
-    
+tm1:resume()  
     collectgarbage()
     local input1, input2, depthedges = loadImagePair(path)
     local output = torch.Tensor(nSamples, input1:size(1)-1+input2:size(1), opt.patchSize, opt.patchSize)
     local extrainfo = opt.sampleWeightMode ~= '' and torch.Tensor(nSamples, 1) or nil
     local doPos = paths.basename(paths.dirname(path)) == 'pos'
     --local map = {input1:narrow(1,1,3):clone(), input2:narrow(1,1,3):clone()}
-    
+tm1:stop()    
     for s=1,nSamples do
         local out1, out2
         local in1idx, in2idx
         local ok = false
-                    
-        for a=1,1000 do
+tm2:resume()                     
+        for a=1,10000 do
             in1idx = samplePatch(input1)
             
             if not doPos then 
                 -- rejective sampling for neg position
-                for b=1,1000 do    
+                for b=1,10000 do    
                     in2idx = samplePatch(input2)
 
                     if opt.patchSampleNegDist=='center' then
@@ -211,13 +286,13 @@ local function processImagePair(dataset, path, nSamples, traintime)
                         assert(false)
                     end       
  
-                    if ok then            
+                    if ok then    
                         out2, ok = extractPatch(input2, in2idx)
                         --map[2][in2idx.p]:fill(0)                     
                         break
                     end
                 end    
-            else          
+            else
                 out2, ok = extractPatch(input2, in1idx, true)
             end
             
@@ -241,12 +316,13 @@ local function processImagePair(dataset, path, nSamples, traintime)
             
             -- ignore patches with transparency (incomplete data)
             if ok then
-                ok = not torch.any(torch.lt(out1[4],1))
+                ok = torch.eq(out1[4],0):sum()/out1[4]:numel() < 0.05
             end
 
             if ok then break end
         end
-        
+tm2:stop()
+tm3:resume()        
         assert(ok, 'too many bad attemps, something went wrong with sampling from '..path)
         out1 = out1:narrow(1,1,3) --drop alpha-layer
         
@@ -273,7 +349,7 @@ local function processImagePair(dataset, path, nSamples, traintime)
         
         local out = output[s]
         out:narrow(1,1,3):copy(out1)
-        out:narrow(1,4,out2:size(1)):copy(out2)
+        out:narrow(1,4,out2:size(1)):copy(out2)    
  
         -- mean/std
         for i=1,out:size(1) do -- channels/modalities
@@ -295,14 +371,15 @@ local function processImagePair(dataset, path, nSamples, traintime)
                 out = image.warp(out, field, 'lanczos')
             end 
         end
-        
+tm3:stop()        
         if false and doPos then
             writePatches(out,s)
             --plotPatches(out)
             print(doPos)
         end
+ 
     end
-
+    --print(tm1:time().real, tm2:time().real, tm3:time().real)
     --image.display{image=map[1]}; image.display{image=map[2]}
     return {d=output, e=extrainfo}
 end

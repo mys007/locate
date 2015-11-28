@@ -5,13 +5,21 @@ require 'inn'
 require 'image'
 require 'myrock'
 require 'strict'
-require 'SpatialMaxPoolingCaffe' --legacy
+--require 'SpatialMaxPoolingCaffe' --legacy
 require 'SampleWeighter'
 if opt.backend=='cudnn' then require 'cudnn' end
 
 local SpatialMaxPooling = opt.backend=='cudnn' and cudnn.SpatialMaxPooling or nn.SpatialMaxPooling
 local SpatialConvolution = opt.backend=='cudnn' and cudnn.SpatialConvolution or nn.SpatialConvolutionMM
 local ReLU = opt.backend=='cudnn' and cudnn.ReLU or nn.ReLU
+
+if opt.cudnnMode=='fastest' then
+    cudnn.fastest = true
+elseif opt.cudnnMode=='benchmark' then
+    cudnn.benchmark = true
+else
+    cudnn.fastest = false; cudnn.benchmark = false
+end
 
 
 function createModel(opt)
@@ -186,7 +194,32 @@ function createModel(opt)
                 end            
                 
             elseif (mType=='d') then    --d,dropout_rate    //0=no dropout
-                model:add(nn.Dropout(args[1]))           
+                model:add(nn.Dropout(args[1]))     
+                
+            elseif (mType=='s') then   --s,sz1,sz2,..,szN  (sz1<sz2,.. and currently sz2=2*sz1). szi = size of the crops before downsampling to sz1.
+                if torch.isTypeOf(model:get(model:size()), 'cudnn.ReLU') then model:remove(model:size()); model:add(nn.ReLU()) end
+                local branch = model:clone()
+                model.modules = {}
+                local conc = nn.Concat(2)
+                model:add(conc)
+                
+                --SZ's two-stream net (fovea/iris) as multi-stream net. Crop central region and/or downscale.
+                for a=1,#args do
+                    local seq = nn.Sequential()
+                    local halfcrop = (model.inputDim[2] - args[a]) / 2
+                    if halfcrop>0 then seq:add(nn.SpatialZeroPadding(-halfcrop,-halfcrop,-halfcrop,-halfcrop)) end
+                    local downf = args[a] / args[1]
+                    if a>1 then seq:add(cudnn.SpatialAveragePooling(downf,downf,downf,downf)) end --alt:SpatialScaling
+                    if a==1 then 
+                        seq:add(branch)
+                    else
+                        local br = branch:clone()
+                        br.pendingSharing = function(self) self:share(branch,'bias','weight','gradBias','gradWeight') end   
+                        seq:add(br)
+                    end
+                    conc:add(seq)
+                end     
+                nPlanes = nPlanes * #args                
                                
             elseif (mType=='fin') then  --fin,1lrfactorweight,2lrfactorbias
                 model:add(nn.View(-1):setNumInputDims(#datasetInfo.sampleSize))

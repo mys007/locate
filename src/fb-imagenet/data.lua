@@ -24,10 +24,10 @@ end
 -- For the data-loading details, look at donkey.lua
 -------------------------------------------------------------------------------
 do -- start K datathreads (donkeys)
+   local mcinitdata = MultithreadCache.createSharedData(opt.nDonkeys)
    if opt.nDonkeys > 0 then
       local options = opt -- make an upvalue to serialize over to donkey threads
-      local mcinitdata = MultithreadCache.createSharedData(opt.nDonkeys)
-    
+          
       donkeys = Threads(
          opt.nDonkeys,
       --   function()
@@ -47,6 +47,7 @@ do -- start K datathreads (donkeys)
          end
       );
    else -- single threaded data loading. useful for debugging
+      mtcache = MultithreadCache(mcinitdata)
       doDonkey(opt)
       donkeys = {}
       function donkeys:addjob(f1, f2, f3) if type(f1)=='function' then f2(f1()) else f3(f2()) end end

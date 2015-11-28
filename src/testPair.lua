@@ -6,6 +6,7 @@ require 'libmattorch'
 require 'xlua'
 require 'pl'
 require 'fb-imagenet/SampleWeighter'
+require 'myrock'
 
 
 opt = lapp[[
@@ -15,12 +16,12 @@ opt = lapp[[
    -o        (default 1)      		whether to use orig image (1) or _crop image (0)
    --step	 (default 0.1)		relative step size (image1)
    --win	 (default 0.5)      relative window size (to input2)
+   --patchSize (default -1)     patchSize (if non-standard then adapted by SPP)
 ]]
 
 
 local netpath = opt.n
 local setname = opt.s
-local expername = opt.e
 
 local patchdir = '/media/simonovm/Slow/datasets/Locate/match_descriptors_dataset'
 local shadesrange = {4,21}
@@ -46,8 +47,14 @@ local function loadImagePair(path)
     elseif opt.inputMode=='depth' then
         input2 = torch.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'distance_crop.t7img.gz')):decompress()
         --TODO: use log domain [note that sky<0]? should sky by e.g. +40000? 
-    elseif opt.inputMode=='all' then
-        --TODO (allshadesG, camnorm, depth)
+    elseif opt.inputMode=='shadesnormG' then
+        local nCh = 1
+        for i=shadesrange[1],shadesrange[2] do
+            local im = image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', string.format('panorama_crop_%02d.png', i)), nCh)
+            input2 = input2 or torch.Tensor(3+(shadesrange[2]-shadesrange[1]+1)*nCh,im:size(im:dim()-1),im:size(im:dim()))
+            input2:narrow(1, nCh*(i-shadesrange[1])+1, nCh):copy(im)
+        end        
+        input2:narrow(1, input2:size(1)-2, 3):copy( image.load(paths.concat(patchdir, paths.basename(path,'t7img'), 'maps', 'normalsCamera_crop.png'), 3) )
     else
         assert(false)
     end
@@ -76,7 +83,7 @@ end
 --------------------
 -- Dense evaluation of similarity for aligned image pairs
 function densePairEval(model, input1, input2)
-    local sz = model.inputDim[3]
+    local sz = opt.patchSize
     local img = torch.CudaTensor(model.inputDim[1], input1:size(2), input1:size(3))
     img:narrow(1,1,3):copy(input1:narrow(1,1,3)) --(drop alpha-layer)
     img:narrow(1,4,input2:size(1)):copy(input2)
@@ -96,7 +103,7 @@ function densePairEval(model, input1, input2)
         --TODO: should probably filter out patches with transparency?
  
         if x%10==0 or x==img:size(3)-sz+1 then 
-            libmattorch.saveTensor(opath .. '/dense_scores-'..setname..'-'..expername..'.mat', scores:double())
+            libmattorch.saveTensor(opath .. '/dense_scores-'..setname..'.mat', scores:double())
         end
         xlua.progress(x,img:size(3)-sz+1)
     end 
@@ -128,7 +135,7 @@ function pointMatches(model, input1, input2, stepPerc, winSizePerc)
     
     local step = {0, math.ceil(stepPerc * input1:size(2)), math.ceil(stepPerc * input1:size(3))}
     local halfwin = {0, math.ceil(winSizePerc/2 * input2:size(2)), math.ceil(winSizePerc/2 * input2:size(3))}
-    local sz = model.inputDim[3]
+    local sz = opt.patchSize
     local inputGpu = torch.CudaTensor(1, model.inputDim[1], sz, sz)    
     local scores = {}
  
@@ -170,16 +177,16 @@ function pointMatches(model, input1, input2, stepPerc, winSizePerc)
 
 		        table.insert(scores, {(x1+sz/2)/sf1, (y1+sz/2)/sf1, unpack(bestMatch)})
 		  
-		        libmattorch.saveTensor(opath .. '/matches-'..setname..'-scoremap-'..x1..','..y1..expername..'.mat', scoremap:double())
-		        image.save(opath .. '/matches-'..setname..'-scoremap-'..x1..','..y1..expername..'.png', input1:narrow(2,y1,sz):narrow(3,x1,sz):float())      
+		        libmattorch.saveTensor(opath .. '/matches-'..setname..'-scoremap-'..x1..','..y1..'.mat', scoremap:double())
+		        image.save(opath .. '/matches-'..setname..'-scoremap-'..x1..','..y1..'.png', input1:narrow(2,y1,sz):narrow(3,x1,sz):float())      
 	        end       
         end
         
-        libmattorch.saveTensor(opath .. '/matches-'..setname..expername..'.mat', torch.DoubleTensor(scores))
+        libmattorch.saveTensor(opath .. '/matches-'..setname..'.mat', torch.DoubleTensor(scores))
         xlua.progress(x1,input1:size(3)-sz+1)            
     end
         
-    libmattorch.saveTensor(opath .. '/matches-'..setname..expername..'.mat', torch.DoubleTensor(scores))
+    libmattorch.saveTensor(opath .. '/matches-'..setname..'.mat', torch.DoubleTensor(scores))
 end
 
 
@@ -188,9 +195,23 @@ end
 local model = loadNetwork(paths.concat(netpath, 'network.net'))
 
 opt.inputMode = model.inputMode
-opath = paths.concat(netpath, 'plots_ep'..model.epoch)
+local expername = string.len(opt.e)>0 and '_'..opt.e or ''
+opath = paths.concat(netpath, 'plots_ep'..model.epoch..expername)
 paths.mkdir(opath)
 
+if opt.patchSize > 0 then --add SPP if necessary
+    assert(opt.patchSize >= model.inputDim[3], 'Input patch size must be at least as big as the network\'s input size.')
+    pcall(function() model:forward(torch.CudaTensor(1,model.inputDim[1],opt.patchSize,opt.patchSize)) end)
+    for i=1,#model.modules do
+        if torch.isTypeOf(model.modules[i], 'nn.View') then 
+            model:insert(nn.SpatialMaxPooling(model.modules[i-1].output:size(3), model.modules[i-1].output:size(4)):cuda(), i)
+            --model:insert(nn.SpatialAdaptiveMaxPooling(1, 1):cuda(), i) --can't handle big batches
+            break
+        end
+    end
+else
+    opt.patchSize = model.inputDim[3]
+end
 
 local input1, input2 = loadImagePair(setname)
 if opt.o>0 then input1 = image.load(paths.concat(patchdir, paths.basename(setname,'t7img'), 'maps', 'orig_image.jpg')) end
