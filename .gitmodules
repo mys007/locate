@@ -4,6 +4,3 @@
 [submodule "PD_edges/toolbox"]
 	path = PD_edges/toolbox
 	url = https://github.com/pdollar/toolbox
-[submodule "PD_edges/edges"]
-	path = PD_edges/edges
-	url = https://github.com/pdollar/edges.git
