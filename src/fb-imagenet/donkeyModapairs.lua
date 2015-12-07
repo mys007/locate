@@ -36,7 +36,7 @@ elseif opt.inputMode=='allshades' then sampleSize[1] = 3 + 3*(shadesrange[2]-sha
 elseif opt.inputMode=='allshadesG' then sampleSize[1] = 3 + shadesrange[2]-shadesrange[1]+1
 elseif opt.inputMode=='shadesnormG' then sampleSize[1] = 3 + 3 + shadesrange[2]-shadesrange[1]+1 end
 
-local filecache = {}
+local badfiles = {}
 
 -- channel-wise mean and std. Calculate or load them from disk later in the script.
 local mean,std
@@ -91,16 +91,16 @@ end--]]
 -- load photo and synthetic images (hack: in memory-mapped database shared among processes/threads, there are just filenames in the dir)
 local function loadImagePair(path)
     assert(path~=nil)
-    
+
     local timer = torch.Timer()
     timer:reset()
-    
+
     local txn = db:txn(true)
     lmdb.verbose = false
     local entry = txn:get(paths.basename(path,'t7img'))
     lmdb.verbose = true
     txn:abort()
-    
+
     if entry then   
         --return entry[1]:float()/255, entry[2]:float()/255, entry[3]:float()/255
         return entry[1]:decompress():float()/255, entry[2]:decompress():float()/255, entry[3]:decompress():float()/255
@@ -207,7 +207,6 @@ local function extractPatch(input, indices, jitter)
         
         -- rotate & crop center
         if (alpha ~= 0) then
-        
             --local r = cv.getRotationMatrix2D{center={patchEx:size(3)/2, patchEx:size(2)/2}, angle=alpha*180/math.pi, scale=1}
             --patchEx = cv.warpAffine{src=patchEx:transpose(1, 3):contiguous(), M=r}:transpose(1, 3)  --slow due to contiguous
             patchEx = image.rotate(patchEx, alpha, 'bilinear') --bilinear major cause of slowdown
@@ -220,10 +219,12 @@ local function extractPatch(input, indices, jitter)
         patchEx = input[indices.p]
     end
    
-    --local interp = patchEx:size(2)>opt.patchSize and cv.INTER_LINEAR or cv.CV_INTER_AREA
-    --patchEx = cv.resize{src=patchEx:transpose(1, 3):contiguous(), dsize={opt.patchSize, opt.patchSize}, interpolation=interp}:transpose(1, 3):contiguous()  --slow due to contiguous
-    patchEx = image.scale(patchEx, opt.patchSize, opt.patchSize, 'bilinear') --bilinear major cause of slowdown
-       
+    if patchEx:size(2)~=opt.patchSize or patchEx:size(3)~=opt.patchSize then
+        --local interp = patchEx:size(2)>opt.patchSize and cv.INTER_LINEAR or cv.CV_INTER_AREA
+        --patchEx = cv.resize{src=patchEx:transpose(1, 3):contiguous(), dsize={opt.patchSize, opt.patchSize}, interpolation=interp}:transpose(1, 3):contiguous()  --slow due to contiguous
+        patchEx = image.scale(patchEx, opt.patchSize, opt.patchSize, 'bilinear') --bilinear major cause of slowdown
+    end
+           
     return patchEx, true
 end
 
@@ -251,25 +252,29 @@ local tm1 = torch.Timer():stop()  ;local tm2 = torch.Timer():stop() ;local tm3 =
 --------------------------------
 local function processImagePair(dataset, path, nSamples, traintime)
     assert(traintime~=nil)
-tm1:resume()  
+
     collectgarbage()
+    if badfiles[path] then return end
+tm1:resume()    
     local input1, input2, depthedges = loadImagePair(path)
     local output = torch.Tensor(nSamples, input1:size(1)-1+input2:size(1), opt.patchSize, opt.patchSize)
     local extrainfo = opt.sampleWeightMode ~= '' and torch.Tensor(nSamples, 1) or nil
     local doPos = paths.basename(paths.dirname(path)) == 'pos'
     --local map = {input1:narrow(1,1,3):clone(), input2:narrow(1,1,3):clone()}
-tm1:stop()    
+tm1:stop()        
+    if input1:size(2)<= opt.patchSize or input1:size(3)<= opt.patchSize then badfiles[path]=path; return end   
+    
     for s=1,nSamples do
         local out1, out2
         local in1idx, in2idx
         local ok = false
 tm2:resume()                     
-        for a=1,10000 do
+        for a=1,100 do
             in1idx = samplePatch(input1)
             
             if not doPos then 
                 -- rejective sampling for neg position
-                for b=1,10000 do    
+                for b=1,100 do    
                     in2idx = samplePatch(input2)
 
                     if opt.patchSampleNegDist=='center' then
@@ -322,8 +327,13 @@ tm2:resume()
             if ok then break end
         end
 tm2:stop()
+        --assert(ok, 'too many bad attemps, something went wrong with sampling from '..path)
+        if not ok then
+            badfiles[path]=path
+            return
+        end
 tm3:resume()        
-        assert(ok, 'too many bad attemps, something went wrong with sampling from '..path)
+        
         out1 = out1:narrow(1,1,3) --drop alpha-layer
         
         --set learning rate/importance for the sample

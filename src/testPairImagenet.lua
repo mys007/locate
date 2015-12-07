@@ -5,15 +5,16 @@ require('myrock')
 require 'libmattorch'
 require 'xlua'
 require 'pl'
+require 'inn'
 require 'fb-imagenet/SampleWeighter'
 require 'myrock'
 
 
 opt = lapp[[
-   -n        (default "/home/simonovm/workspace/E/locate/main-2ch2d/20150914-012907-allshadesG-p64-th07-lr1e2-ex")      netpath
+   -n        (default "/media/simonovm/Slow/OLDSTUFF/workspace/E/poseest/main-alexnetcaffe/20150625-003644-base-sgdc-256per128-cudnn-seedfix-gr1-ex")      netpath
    -s        (default "zumsteinspitze")          setname
    -e        (default "")        	experiment name
-   -o        (default 0)      		whether to use orig image (1) or _crop image (0)
+   -o        (default 1)      		whether to use orig image (1) or _crop image (0)
    --step	 (default 0.1)		relative step size (image1)
    --win	 (default 0.5)      relative window size (to input2)
    --patchSize (default -1)     patchSize (if non-standard then adapted by SPP)
@@ -70,10 +71,10 @@ function loadNetwork(path)
 	cutorch.manualSeed(1)
 	
 	local model = torch.load(path)
+	model = model:get(1) --conv part
 	model = model:cuda()
-	
-	--handle legacy
-	if not model.inputMode then model.inputMode = 'allshadesG' end
+	model.inputDim = {3, 224, 224}
+	model.epoch = 92
 
 	print('Loaded '..path)
 	print(model)
@@ -136,7 +137,8 @@ function pointMatches(model, input1, input2, stepPerc, winSizePerc)
     local step = {0, math.ceil(stepPerc * input1:size(2)), math.ceil(stepPerc * input1:size(3))}
     local halfwin = {0, math.ceil(winSizePerc/2 * input2:size(2)), math.ceil(winSizePerc/2 * input2:size(3))}
     local sz = opt.patchSize
-    local inputGpu = torch.CudaTensor(1, model.inputDim[1], sz, sz)    
+    local input1Gpu = torch.CudaTensor(1, 3, sz, sz)    
+    local input2Gpu = torch.CudaTensor(input2:size(1)/3, 3, sz, sz)        
     local scores = {}
  
     for x1 = 1, input1:size(3)-sz+1, step[3] do
@@ -145,34 +147,29 @@ function pointMatches(model, input1, input2, stepPerc, winSizePerc)
     --for x1 = 722,722 do
       --  for y1 = 22,22 do   
       
+            input1Gpu:copy(input1:narrow(2,y1,sz):narrow(3,x1,sz))
+            local feat1 = model:forward(input1Gpu):clone()
+      
       		if not torch.any(torch.lt(alpha:narrow(1,y1,sz):narrow(2,x1,sz),1)) then --only valid  
 		    
 		        local bestMatch = {0,0,-1e10}
-		        local scoremap = torch.CudaTensor(1, input2:size(2), input2:size(3)):fill(-1e20)
+		        local scoremap = torch.CudaTensor(input2Gpu:size(1), input2:size(2), input2:size(3)):fill(-1e20)
 
 				-- fully conv evalution not possible for 2ch nets
 		        for x2 = math.max(1, x1-halfwin[3]), math.min(input2:size(3)-sz+1, x1+halfwin[3]) do
 		            
-		            local i = 1
-		            local coords = {}
 		            local rangeY = {math.max(1, y1-halfwin[2]), math.min(input2:size(2)-sz+1, y1+halfwin[2])}
-		            inputGpu:resize(rangeY[2]-rangeY[1]+1, model.inputDim[1], sz, sz)        
 		        
 		            for y2 = rangeY[1], rangeY[2] do
-		                inputGpu[i]:narrow(1,1,3):copy( input1:narrow(2,y1,sz):narrow(3,x1,sz) )
-		                inputGpu[i]:narrow(1,4,input2:size(1)):copy( input2:narrow(2,y2,sz):narrow(3,x2,sz) )
-		                coords[i] = y2
-		                i = i + 1
+	                    input2Gpu:copy(input2:narrow(2,y2,sz):narrow(3,x2,sz))
+	                    local feats2 = model:forward(input2Gpu)
+                        for f=1,input2Gpu:size(1) do
+                            feats2[f]:add(-1,feat1)
+                            local s = 1/(feats2[f]:norm(2) + 1e-10)
+                            if s > bestMatch[3] then bestMatch = {(x2+sz/2)/sf2, (y2+sz/2)/sf2, s} end
+                            if s > scoremap[f][y2 + sz/2][x2 + sz/2] then scoremap[f][y2 + sz/2][x2 + sz/2] = s end
+                        end
 		            end
-		            
-		            model:forward(inputGpu)
-		            local output = (model.outputDim == 1) and model.output or model.output:select(2,1)
-		            
-		            local s,i = model.output:max(1)
-		            s, i = s:squeeze(), i:squeeze()
-		            if s > bestMatch[3] then bestMatch = {(x2+sz/2)/sf2, (coords[i]+sz/2)/sf2, s} end
-		            
-		            scoremap:narrow(2, rangeY[1] + sz/2, inputGpu:size(1)):select(3, x2 + sz/2):copy(output)         
 		        end
 
 		        table.insert(scores, {(x1+sz/2)/sf1, (y1+sz/2)/sf1, unpack(bestMatch)})
@@ -194,7 +191,7 @@ end
 
 local model = loadNetwork(paths.concat(netpath, 'network.net'))
 
-opt.inputMode = model.inputMode
+opt.inputMode = 'allshades'
 local expername = string.len(opt.e)>0 and '_'..opt.e or ''
 opath = paths.concat(netpath, 'plots_ep'..model.epoch..expername)
 paths.mkdir(opath)
