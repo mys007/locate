@@ -164,6 +164,12 @@ end
 function trainTree( opts, stream, treeInd )
 % Train a single tree in forest model.
 
+
+%labelstype = 'uint8';
+labelstype = 'single';
+
+
+
 % location of ground truth
 trnImgDir = [opts.bsdsDir '/images/train/'];
 trnDepDir = [opts.bsdsDir '/depth/train/'];
@@ -195,11 +201,17 @@ RandStream.setGlobalStream( stream );
 fids=sort(randperm(nTotFtrs,round(nTotFtrs*opts.fracFtrs)));
 k = nPos+nNeg; nImgs=min(nImgs,opts.nImgs);
 ftrs = zeros(k,length(fids),'single');
-labels = zeros(gtWidth,gtWidth,k,'uint8'); k = 0;
+labels = zeros(gtWidth,gtWidth,k,labelstype); k = 0;
 tid = ticStatus('Collecting data',30,1);
 for i = 1:nImgs
   % get image and compute channels
   gt=load([trnGtDir imgIds{i} '.mat']); gt=gt.groundTruth;
+  
+  
+  gt=gt(3:end);
+  
+  
+  
   I=imread([trnImgDir imgIds{i} '.' ext]); siz=size(I);
   if(rgbd), D=single(imread([trnDepDir imgIds{i} '.png']))/1e4; end
   if(rgbd==1), I=D; elseif(rgbd==2), I=cat(3,single(I)/255,D); end
@@ -223,14 +235,23 @@ for i = 1:nImgs
   if(k1>size(ftrs,1)-k), k1=size(ftrs,1)-k; xy=xy(1:k1,:); end
   % crop patches and ground truth labels
   psReg=zeros(imWidth/shrink,imWidth/shrink,nChns,k1,'single');
-  lbls=zeros(gtWidth,gtWidth,k1,'uint8');
+  lbls=zeros(gtWidth,gtWidth,k1,labelstype);
   psSim=psReg; ri=imRadius/shrink; rg=gtRadius;
   for j=1:k1, xy1=xy(j,:); xy2=xy1/shrink;
     psReg(:,:,:,j)=chnsReg(xy2(2)-ri+1:xy2(2)+ri,xy2(1)-ri+1:xy2(1)+ri,:);
     psSim(:,:,:,j)=chnsSim(xy2(2)-ri+1:xy2(2)+ri,xy2(1)-ri+1:xy2(1)+ri,:);
     t=gt{xy1(3)}.Segmentation(xy1(2)-rg+1:xy1(2)+rg,xy1(1)-rg+1:xy1(1)+rg);
-    if(all(t(:)==t(1))), lbls(:,:,j)=1; else [~,~,t]=unique(t);
-      lbls(:,:,j)=reshape(t,gtWidth,gtWidth); end
+    
+    
+    
+    %if(all(t(:)==t(1))), lbls(:,:,j)=1; else [~,~,t]=unique(t);
+    %  lbls(:,:,j)=reshape(t,gtWidth,gtWidth); end
+  
+  lbls(:,:,j)=t;
+  
+  
+  
+  
   end
   if(0), figure(1); montage2(squeeze(psReg(:,:,1,:))); drawnow; end
   if(0), figure(2); montage2(lbls(:,:,:)); drawnow; end
@@ -279,7 +300,13 @@ end
 % compute n binary codes zs of length nSamples
 nSamples=min(nSamples,length(is1)); kp=randperm(length(is1),nSamples);
 n=length(segs); is1=is1(kp); is2=is2(kp); zs=false(n,nSamples);
-for i=1:n, zs(i,:)=segs{i}(is1)==segs{i}(is2); end
+
+
+%for i=1:n, zs(i,:)=segs{i}(is1)==segs{i}(is2); end
+zs=zeros(n,nSamples); for i=1:n, zs(i,:)=segs{i}(is1)-segs{i}(is2); end
+%for i=1:n, zs(i,:)=segs{i}(is1)>segs{i}(is2); end
+
+
 zs=bsxfun(@minus,zs,sum(zs,1)/n); zs=zs(:,any(zs,1));
 if(isempty(zs)), hs=ones(n,1,'uint32'); segs=segs{1}; return; end
 % find most representative segs (closest to mean)
