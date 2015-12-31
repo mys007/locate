@@ -125,22 +125,49 @@ for i=1:nTrees
   if(i==1), trees=t(ones(1,nTrees)); else trees(i)=t; end
 end
 nNodes=0; for i=1:nTrees, nNodes=max(nNodes,size(trees(i).fids,1)); end
+
+
+%labelstype = 'uint8';
+labelstype = 'single';
+
+
 % merge all fields of all trees
 model.opts=opts; Z=zeros(nNodes,nTrees,'uint32');
 model.thrs=zeros(nNodes,nTrees,'single');
 model.fids=Z; model.child=Z; model.count=Z; model.depth=Z;
-model.segs=zeros(gtWidth,gtWidth,nNodes,nTrees,'uint8');
+model.segs=zeros(gtWidth,gtWidth,nNodes,nTrees,labelstype);
 for i=1:nTrees, tree=trees(i); nNodes1=size(tree.fids,1);
   model.fids(1:nNodes1,i) = tree.fids;
   model.thrs(1:nNodes1,i) = tree.thrs;
   model.child(1:nNodes1,i) = tree.child;
   model.count(1:nNodes1,i) = tree.count;
   model.depth(1:nNodes1,i) = tree.depth;
-  model.segs(:,:,1:nNodes1,i) = tree.hs-1;
+  %model.segs(:,:,1:nNodes1,i) = tree.hs-1;
+  model.segs(:,:,1:nNodes1,i) = tree.hs(:,:,:,2,:);
 end
+
+segs=model.segs;
+parfor i=1:nTrees*nNodes
+%   E=edge(segs(:,:,i),'Canny',[1e-7 6e-4]); 
+% 
+%   Wthres = 4; th=230;
+%   W = imgradient(segs(:,:,i)) + 1e-10;
+%   W(~E) = 0;
+%   
+%   cc = bwconncomp(W); 
+%   stats = regionprops(cc, W, 'Area','MeanIntensity'); 
+%   idx = find([stats.Area] > 10 & [stats.MeanIntensity] > th/255*Wthres); 
+%   Efiltered = ismember(labelmatrix(cc), idx);
+%   
+%   segs(:,:,i) = inferLabels(Efiltered)-1;
+
+    segs(:,:,i) = inferLabels(segs(:,:,i))-1;
+end
+model.segs=segs;
+
 % remove very small segments (<=5 pixels)
 segs=model.segs; nSegs=squeeze(max(max(segs)))+1;
-parfor i=1:nTrees*nNodes, m=nSegs(i);
+parfor i=1:nTrees*nNodes, m=nSegs(i);                             %% disabled by me!!!
   if(m==1), continue; end; S=segs(:,:,i); del=0;
   for j=1:m, Sj=(S==j-1); if(nnz(Sj)>5), continue; end
     S(Sj)=median(single(S(convTri(single(Sj),1)>0))); del=1; end
@@ -160,6 +187,37 @@ end
 eBins=eBins'; model.eBins=[eBins{:}]';
 eBnds=eBnds'; model.eBnds=uint32([0; cumsum(eBnds(:))]);
 end
+
+
+
+function I = inferLabels(I)
+    Ith = I;
+    I = ones(size(I));
+
+    for j=1:size(I,2)
+        la=1;
+        lifetime = 0;
+        for i=2:size(I,1)    
+            if Ith(i,j)==1 && Ith(i-1,j)~=1
+                la = la+1;
+                lifetime = 32;
+            elseif Ith(i,j)==1 && Ith(i-1,j)==1
+                lifetime = 32;
+            else
+                lifetime = lifetime - 1;
+                if lifetime==0 && la>1
+                    la = 1;
+                end
+            end
+            I(i,j)=la;            
+        end
+    end
+    %figure(2);imshow(I);
+    I = uint8(I);
+end
+
+
+
 
 function trainTree( opts, stream, treeInd )
 % Train a single tree in forest model.
@@ -201,15 +259,15 @@ RandStream.setGlobalStream( stream );
 fids=sort(randperm(nTotFtrs,round(nTotFtrs*opts.fracFtrs)));
 k = nPos+nNeg; nImgs=min(nImgs,opts.nImgs);
 ftrs = zeros(k,length(fids),'single');
-labels = zeros(gtWidth,gtWidth,k,labelstype); k = 0;
+labels = zeros(gtWidth,gtWidth,k,2,labelstype); k = 0;
 tid = ticStatus('Collecting data',30,1);
 for i = 1:nImgs
   % get image and compute channels
   gt=load([trnGtDir imgIds{i} '.mat']); gt=gt.groundTruth;
   
   
-  gt=gt(3:end);
-  
+  gt=gt(4:end);
+  %gt=gt(3); 
   
   
   I=imread([trnImgDir imgIds{i} '.' ext]); siz=size(I);
@@ -235,7 +293,7 @@ for i = 1:nImgs
   if(k1>size(ftrs,1)-k), k1=size(ftrs,1)-k; xy=xy(1:k1,:); end
   % crop patches and ground truth labels
   psReg=zeros(imWidth/shrink,imWidth/shrink,nChns,k1,'single');
-  lbls=zeros(gtWidth,gtWidth,k1,labelstype);
+  lbls=zeros(gtWidth,gtWidth,k1,2,labelstype);
   psSim=psReg; ri=imRadius/shrink; rg=gtRadius;
   for j=1:k1, xy1=xy(j,:); xy2=xy1/shrink;
     psReg(:,:,:,j)=chnsReg(xy2(2)-ri+1:xy2(2)+ri,xy2(1)-ri+1:xy2(1)+ri,:);
@@ -247,7 +305,8 @@ for i = 1:nImgs
     %if(all(t(:)==t(1))), lbls(:,:,j)=1; else [~,~,t]=unique(t);
     %  lbls(:,:,j)=reshape(t,gtWidth,gtWidth); end
   
-  lbls(:,:,j)=t;
+  lbls(:,:,j,1)=t;
+  lbls(:,:,j,2)=gt{xy1(3)}.Boundaries(xy1(2)-rg+1:xy1(2)+rg,xy1(1)-rg+1:xy1(1)+rg);
   
   
   
@@ -257,16 +316,16 @@ for i = 1:nImgs
   if(0), figure(2); montage2(lbls(:,:,:)); drawnow; end
   % compute features and store
   ftrs1=[reshape(psReg,[],k1)' stComputeSimFtrs(psSim,opts)];
-  ftrs(k+1:k+k1,:)=ftrs1(:,fids); labels(:,:,k+1:k+k1)=lbls;
+  ftrs(k+1:k+k1,:)=ftrs1(:,fids); labels(:,:,k+1:k+k1,:)=lbls;
   k=k+k1; if(k==size(ftrs,1)), tocStatus(tid,1); break; end
   tocStatus(tid,i/nImgs);
 end
-if(k<size(ftrs,1)), ftrs=ftrs(1:k,:); labels=labels(:,:,1:k); end
+if(k<size(ftrs,1)), ftrs=ftrs(1:k,:); labels=labels(:,:,1:k,:); end
 
 % train structured edge classifier (random decision tree)
 pTree=struct('minCount',opts.minCount, 'minChild',opts.minChild, ...
   'maxDepth',opts.maxDepth, 'H',opts.nClasses, 'split',opts.split);
-t=labels; labels=cell(k,1); for i=1:k, labels{i}=t(:,:,i); end
+t=labels; labels=cell(k,1); for i=1:k, labels{i}=t(:,:,i,:); end
 pTree.discretize=@(hs,H) discretize(hs,H,opts.nSamples,opts.discretize);
 tree=forestTrain(ftrs,labels,pTree); tree.hs=cell2array(tree.hs);
 tree.fids(tree.child>0) = fids(tree.fids(tree.child>0)+1)-1;
@@ -303,7 +362,7 @@ n=length(segs); is1=is1(kp); is2=is2(kp); zs=false(n,nSamples);
 
 
 %for i=1:n, zs(i,:)=segs{i}(is1)==segs{i}(is2); end
-zs=zeros(n,nSamples); for i=1:n, zs(i,:)=segs{i}(is1)-segs{i}(is2); end
+zs=zeros(n,nSamples); for i=1:n, segi=segs{i}(:,:,1); zs(i,:)=segi(is1)-segi(is2); end
 %for i=1:n, zs(i,:)=segs{i}(is1)>segs{i}(is2); end
 
 
